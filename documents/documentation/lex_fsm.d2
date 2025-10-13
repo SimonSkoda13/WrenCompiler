@@ -1,0 +1,266 @@
+* {
+  shape: circle
+}
+
+*.style: {
+  double-border: true
+}
+
+Start
+Start.style: {
+  double-border: false
+}
+F1
+F2
+F3
+F4
+F5
+F6
+F7
+F8
+F9
+F10
+F11
+F12
+F13
+F14
+F15
+F16
+F17
+F18
+F19
+F20
+F21
+F22
+F23
+C1
+C1.style: {
+  double-border: false
+}
+C2
+C2.style: {
+  double-border: false
+}
+C3
+C3.style: {
+  double-border: false
+}
+Q1
+Q1.style: {
+  double-border: false
+}
+Q2
+Q2.style: {
+  double-border: false
+}
+Q3
+Q3.style: {
+  double-border: false
+}
+Q4
+Q4.style: {
+  double-border: false
+}
+Q5
+Q5.style: {
+  double-border: false
+}
+Q6
+Q6.style: {
+  double-border: false
+}
+Q7
+Q7.style: {
+  double-border: false
+}
+Q8
+Q8.style: {
+  double-border: false
+}
+Q9
+Q9.style: { 
+  double-border: false
+}
+Q10
+Q10.style: {
+  double-border: false
+}
+Q11
+Q11.style: {
+  double-border: false
+}
+Q12
+Q12.style: {  
+  double-border: false
+}
+Q13
+Q13.style: {
+  double-border: false
+}
+Q14
+Q14.style: {
+  double-border: false
+}
+
+
+
+
+Start -> Start: "[whitespace|EOL]"
+Start -> F1: "+" 
+Start -> F2: "-" 
+Start -> F3: "*" 
+Start -> F4: "/"
+F4 -> C1: "/"
+C1 -> C1: "ε - EOL"
+C1 -> Start: "EOL"
+F4 -> C2: "*"
+C2 -> C2: "ε - *"
+C3 -> C2: "ε - *"
+C2 -> C3: "*"
+C3 -> Start: "/"
+Start -> F5: "="
+F5 -> F6: "="
+Start -> F7: "<"
+F7 -> F8: "="
+Start -> F9: ">"
+F9 -> F10: "="
+Start -> Q1: "!"
+Q1 -> F11: "="
+Start -> F12: "("
+Start -> F13: ")"
+Start -> F14: "{"
+Start -> F15: "}"
+Start -> Q2: "0"
+Q2 -> F16: "0"
+Q2 -> Q3: "[xX]"
+Q3 -> F18: "[0-9|aA-fF]"
+Start -> F16: "[1-9]"
+F16 -> F16: "[0-9]"
+F16 -> Q4: "."
+Q2 -> Q4: "."
+Q4 -> F17: "[0-9]"
+F17 -> F17: "[0-9]"
+F16 -> Q5: "[eE]"
+F17 -> Q5: "[eE]"
+Q5 -> Q6: "[+-]"
+Q5 -> F19: "[0-9]"
+Q6 -> F19: "[0-9]"
+F19 -> F19: "[0-9]"
+Start -> F20: "EOF"
+Start -> Q7: '"'
+Q7 -> Q11: 'ASCII > 31 - [" /]"'
+Q11 -> Q11: 'ASCII > 31 - [" /]"'
+Q11 -> F22: '"'
+Q7 -> Q12: '\'
+Q12 -> Q11: '["nrt\]'
+Q11 -> Q12: '\'
+Q7 -> F21: '"'
+Q12 -> Q13: 'x'
+Q13 -> Q14: '[0-9|aA-fF]'
+Q14 -> Q7: '[0-9|aA-fF]'
+F21 -> Q8: '"'
+Q8 -> Q8: 'ASCII > 0 - ["]'
+Q8 -> Q9: '"'
+Q9 -> Q8: 'ASCII > 0 - ["]'
+Q9 -> Q10: '"'
+Q10 -> Q8: 'ASCII > 0 - ["]'
+Q10 -> F22: '"'
+Start -> Q15: "_"
+Q15 -> Q16: "_"
+Q16 -> F24: "[a-zA-Z0-9_]"
+Start -> F23: "[a-zA-Z]"
+
+
+legend: |md
+  **Vysvetlivky**
+
+  F1 = OP_ADD
+
+  F2 = OP_SUB
+
+  F3 = OP_MUL
+
+  F4 = OP_DIV
+
+  F5 = OP_ASSIGN
+
+  F6 = OP_EQUALS
+
+  F7 = OP_LESS_THAN
+
+  F8 = OP_LESS_EQUAL
+
+  F9 = OP_GREATER_THAN
+
+  F10 = OP_GREATER_THAN_EQUAL
+
+  F11 = OP_NOT_EQUALS
+
+  F12 = LEFT_PAREN
+
+  F13 = RIGHT_PAREN
+
+  F14 = LEFT_BRACE
+
+  F15 = RIGHT_BRACE
+
+  F16 = NUM_INT
+
+  F17 = NUM_FLOAT
+
+  F18 = NUM_HEX
+
+  F19 = NUM_EXP
+
+  F20 = END_OF_FILE
+
+  F21 = STRING_OR_MULTILINE
+
+  F22 = STRING_LITERAL
+
+  F23 = IDENTIFIER_OR_KEYWORD
+
+  F24 = GLOBAL_VAR
+
+  C1 = LINE_COMMENT
+
+  C2 = BLOCK_COMMENT
+
+  C3 = BLOCK_COMMENT_END
+
+  Q1 = NOT
+
+  Q2 = HEX_OR_INT_LITERAL
+
+  Q3 = HEX_NUM_START
+
+  Q4 = DECIMAL_POINT
+
+  Q5 = NUM_EXP_START
+
+  Q6 = NUM_EXP_SIGN
+
+  Q7 = STRING_LITERAL_START
+
+  Q8 = STRING_MULTILINE_CONTENT
+
+  Q9 = STRING_MULTILINE_END_START
+
+  Q10 = STRING_MULTILINE_END_START
+
+  Q11 = STRING_LITERAL_CONTENT
+
+  Q12 = ESCAPE_SEQUENCE_BACKSLASH
+
+  Q13 = ESCAPE_SEQUENCE_HEX_START
+
+  Q14 = ESCAPE_SEQUENCE_HEX_END
+
+  Q15 = GLOBAL_VAR_START
+
+  Q16 = GLOBAL_VAR_NAME
+|
+
+legend.style: {
+  opacity: 0
+}
