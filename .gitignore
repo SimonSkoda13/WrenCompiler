@@ -1,0 +1,23 @@
+# Build artifacts
+build/
+*.o
+*.out
+compiler
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.log
+
+# Test outputs
+tests/output/
+*.ifjcode

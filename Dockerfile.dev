@@ -1,0 +1,21 @@
+# Development Dockerfile for IFJ Compiler Project
+FROM gcc:13
+
+# Install development tools
+RUN apt-get update && apt-get install -y \
+    make \
+    valgrind \
+    gdb \
+    git \
+    vim \
+    nano \
+    clang \
+    clang-format \
+    clang-tidy \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /workspace
+
+# Set default shell
+CMD ["/bin/bash"]

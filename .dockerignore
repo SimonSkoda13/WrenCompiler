@@ -1,0 +1,28 @@
+# Build artifacts
+build/
+*.o
+*.out
+compiler
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentation
+documents/
+*.pdf
+*.md
+
+# macOS
+.DS_Store
+
+# Temporary files
+*.tmp
+*.log
