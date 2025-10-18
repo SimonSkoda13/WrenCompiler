@@ -11,6 +11,9 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <string.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
 
 
 /**
@@ -40,9 +43,35 @@ typedef enum {
   END_OF_FILE,
   STRING_OR_MULTILINE,
   STRING_LITERAL,
-  IDENTIFIER_OR_KEYWORD,
-  GLOBAL_VAR
+  IDENTIFIER,
+  GLOBAL_VAR,
+  EOL,
+  DOT,
+  KEYWORD
 } e_token_type;
+
+/**
+ * Enumy pre kľúčové slová. Treba si uvedomiť že KW_NULL_INST je pre kľúčové slovo 'null' čo je vlastne
+ * literal pre Null a kľúčové slovo 'Null' reprezentuje dátovy typ preto KW_NULL_TYPE. 
+ * Je to niečo podobne ako je rozdiel medzi classou a jej inštanciou
+ */
+typedef enum {
+  KW_CLASS,
+  KW_IF,
+  KW_ELSE,
+  KW_IS,
+  KW_NULL_INST,
+  KW_RETURN,
+  KW_VAR,
+  KW_WHILE,
+  KW_IFJ,
+  KW_STATIC, 
+  KW_IMPORT,
+  KW_FOR,
+  KW_NUM,
+  KW_STRING,
+  KW_NULL_TYPE
+} e_keyword;
 
 /**
  * Union pre hodnotu tokenu.
@@ -51,12 +80,14 @@ typedef enum {
  * Ak je typ tokenu STRING_LITERAL string drží hodnotu literálu.
  * Ak je typ tokenu NUM_FLOAT, NUM_EXP number_float drží hodnotu float čísla.
  * Ak je typ tokenu NUM_INT, NUM_HEX alebo number_int drží
+ * Ak je typ tokenu KEYWORD keyword reprezentuje enum daného kľúčového slova
  */
 typedef union {
 	char *identifier;
 	char *string;
 	double number_float;
 	long number_int;
+  e_keyword keyword;
 } u_token_value;
 
 
@@ -86,6 +117,8 @@ typedef struct {
  * Deklarácie funkcií skenera.
  */
 int get_next_token(t_scanner *scanner, t_token *token);
-int next_char(t_scanner *scanner);
+char next_char(t_scanner *scanner);
 void putback(int c, t_scanner *scanner);
 int skip(t_scanner *scanner);
+int ignore_multiline_comment(t_scanner *scanner);
+void check_keyword(char *possible, t_token *token);

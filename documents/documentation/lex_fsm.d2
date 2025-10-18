@@ -33,6 +33,8 @@ F20
 F21
 F22
 F23
+F24
+F25
 C1
 C1.style: {
   double-border: false
@@ -101,6 +103,15 @@ Q14
 Q14.style: {
   double-border: false
 }
+Q15
+Q15.style: {
+  double-border: false
+}
+Q16
+Q16.style: {
+  double-border: false
+}
+
 
 
 
@@ -169,6 +180,8 @@ Start -> Q15: "_"
 Q15 -> Q16: "_"
 Q16 -> F24: "[a-zA-Z0-9_]"
 Start -> F23: "[a-zA-Z]"
+F23 -> F23: "[a-zA-Z0-9_]"
+Start -> F25: "."
 
 
 legend: |md
@@ -221,6 +234,8 @@ legend: |md
   F23 = IDENTIFIER_OR_KEYWORD
 
   F24 = GLOBAL_VAR
+
+  F25 = DOT
 
   C1 = LINE_COMMENT
 

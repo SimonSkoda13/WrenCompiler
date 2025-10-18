@@ -5,7 +5,7 @@
  * Autori:
  *   - Martin Michálik (xmicham00)
  */
-#include "scanner.h";
+#include "scanner.h"
 
 /**
  * Funkcia, ktorá načíta ďalší token zo vstupného súboru.
@@ -22,6 +22,12 @@ int get_next_token(t_scanner *scanner, t_token *token) {
     switch (c) {
         case EOF:
             token->type = END_OF_FILE;
+            return 0;
+        case '.':
+            token->type = DOT;
+            return 0;
+        case '\n':
+            token->type = EOL;
             return 0;
         case '+':
             token->type = OP_ADD;
@@ -86,23 +92,17 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                 while (c != '\n') {
                     c = next_char(scanner);
                 }
-                //Komentáre ignorujeme takže nevytvoríme token ale načítame ďalší
-                return get_next_token(scanner, token);
+                //Komentáre ignorujeme ale EOL musíme zachovať
+                token->type = EOL;
+                return 0;
             } else if (c == '*') {
                 // Multi-line comment
-                int prev = 0;
-                while (true) {
-                    c = next_char(scanner);
-                    if (c == EOF) {
-                        // Return lex error code for unclosed comment
-                        return 1;
-                    }
-                    if (prev == '*' && c == '/') {
-                        break; //Koniec multi-line komentára
-                    }
-                    prev = c;
+                int multiline = ignore_multiline_comment(scanner);
+                if (multiline == 1) {
+                    return 1;
                 }
-                return get_next_token(scanner, token);
+                token->type = EOL;
+                return 0;
             } else {
                 putback(c, scanner);
                 token->type = OP_DIV;
@@ -235,7 +235,6 @@ int get_next_token(t_scanner *scanner, t_token *token) {
             token->value.string = buf;
             return 0;
         }
-        //TODO: čísla
         case '0':
             //Toto je tiež sranda lebo čísla môžu byť hexadecimálne a exponenciálne
             c = next_char(scanner);
@@ -266,10 +265,93 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                 token->type = NUM_HEX;
                 token->value.number_int = val;
                 return 0;
-            } else if (c == '.') {
-              
             }
+            char int_buf[64];
+            int int_part_len = 0;
+            while (isdigit(c)) {
+                int_buf[int_part_len++] = (char)c;
+                c = next_char(scanner);
+            }
+            int_buf[int_part_len] = '\0';
             
+            if (c == '.') {
+                c = next_char(scanner);
+                if (!isdigit(c)) {
+                    putback(c, scanner);
+                    return 1; //lex error
+                }
+                char float_buf[64];   
+                int i = 0;
+                while (isdigit(c)) {
+                    float_buf[i++] = (char)c;
+                    c = next_char(scanner);
+                }
+                // Build full numeric text safely: "<int>.<frac>[e[+-]<digits>]"
+                char num_buf[256];
+                int nwritten = snprintf(num_buf, sizeof num_buf, "%s.%s", int_buf, float_buf);
+                if (nwritten < 0 || nwritten >= (int)sizeof num_buf) {
+                    return 1; // overflow / lex error
+                }
+                
+                if (c == 'e' || c == 'E') {
+                    c = next_char(scanner);
+                    int sign = 1;
+                    if (c == '-' || c == '+') {
+                        if (c == '-') sign = -1;
+                        c = next_char(scanner);
+                    }
+                    if (!isdigit(c)) {
+                        return 1; //lex error
+                    }
+                    char exp_buf[16];
+                    while (isdigit(c)) {
+                        exp_buf[i++] = (char)c;
+                        c = next_char(scanner);
+                    }
+                    float float_part = strtof(num_buf, NULL);
+                    int exp = strtol(exp_buf, NULL, 10);
+                    float val = float_part * powf(10, sign * exp);
+                    putback(c, scanner);
+                    token->type = NUM_EXP;
+                    token->value.number_float = val;
+                    return 0;
+                }
+                putback(c, scanner);
+                float val = strtof(num_buf, NULL);
+                token->type = NUM_FLOAT;
+                token->value.number_float = val;
+                return 0;
+            }
+            putback(c, scanner);
+            int val = strtol(int_buf, NULL, 10);
+            token->type = NUM_INT;
+            token->value.number_int = val;
+            return 0;
+        case '_':
+            c = next_char(scanner);
+            if (c != '_') {
+                return 1;
+            } else {
+                c = next_char(scanner);
+                char buf[256];
+                int i = 0;
+                while (isalnum(c) || c == '_') {
+                    buf[i++] = c;
+                    c = next_char(scanner);
+                }
+                buf[i] = '\0';
+                putback(c, scanner);
+
+                token->type = GLOBAL_VAR;
+                int id_len = strlen(buf) + 1;
+                char *id = malloc(sizeof(char) * id_len);
+                if (id == NULL) {
+                    return 1;
+                }
+                memcpy(id, buf, id_len);
+                token->value.identifier = id;
+                return 0;
+            }
             
         default: {
             //Handle identifiers and keywords. Musí sa to riešiť v default lebo nemôžeme urobiť
@@ -279,7 +361,7 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                 char buf[256]; //Zatiaľ fixná veľkosť bufferu pre identifikátor
                 int i = 0;
 
-                buf[i++] = (char)c;
+                buf[i++] = c;
                 c = next_char(scanner);
                 while (isalnum(c) || c == '_') {
                     if (i < (int)sizeof(buf) - 1) buf[i++] = (char)c;
@@ -287,9 +369,82 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                 }
                 buf[i] = '\0';
                 putback(c, scanner);
+                check_keyword(buf, token);
+                if (token->type == IDENTIFIER) {
+                    int id_len = strlen(buf) + 1;
+                    char *id = malloc(sizeof(char) * id_len);
+                    if (id == NULL) {
+                        return 1;
+                    }
+                    memcpy(id, buf, id_len);
+                    token->value.identifier = id;
+                }
+                return 0;
+            }
 
-                token->type = IDENTIFIER_OR_KEYWORD;
-                token->value.identifier = strdup(buf);
+            if (isdigit(c)) {
+                char int_buf[64];
+                int int_part_len = 0;
+                while (isdigit(c)) {
+                    int_buf[int_part_len++] = c;
+                    c = next_char(scanner);
+                }
+                if (c == '.') {
+                    c = next_char(scanner);
+                    if (!isdigit(c)) {
+                        putback(c, scanner);
+                        return 1; //lex error
+                    }
+                    char float_buf[64];   
+                    int dec_part_len = 0;
+                    while (isdigit(c)) {
+                        float_buf[dec_part_len++] = (char)c;
+                        c = next_char(scanner);
+                    }
+                    float_buf[dec_part_len] = '\0';
+                    int_buf[int_part_len] = '\0';
+                    // Build full numeric text safely: "<int>.<frac>[e[+-]<digits>]"
+                    char num_buf[256];
+                    int nwritten = snprintf(num_buf, sizeof num_buf, "%s.%s", int_buf, float_buf);
+                    if (nwritten < 0 || nwritten >= (int)sizeof num_buf) {
+                        return 1; // overflow / lex error
+                    }
+                
+                    if (c == 'e' || c == 'E') {
+                        c = next_char(scanner);
+                        int sign = 1;
+                        if (c == '-' || c == '+') {
+                            if (c == '-') sign = -1;
+                            c = next_char(scanner);
+                        }
+                        if (!isdigit(c)) {
+                            return 1; //lex error
+                        }
+                        char exp_buf[16];
+                        int i = 0;
+                        while (isdigit(c)) {
+                            exp_buf[i++] = (char)c;
+                            c = next_char(scanner);
+                        }
+                        float float_part = strtof(num_buf, NULL);
+                        int exp = strtol(exp_buf, NULL, 10);
+                        float val = float_part * powf(10, sign * exp);
+                        putback(c, scanner);
+                        token->type = NUM_EXP;
+                        token->value.number_float = val;
+                        return 0;
+                    }
+                    putback(c, scanner);
+                    float val = strtof(num_buf, NULL);
+                    token->type = NUM_FLOAT;
+                    token->value.number_float = val;
+                    return 0;
+                }
+                putback(c, scanner);
+                int_buf[int_part_len] = '\0';
+                int val = strtol(int_buf, NULL, 10);
+                token->type = NUM_INT;
+                token->value.number_int = val;
                 return 0;
             }
         }
@@ -298,14 +453,35 @@ int get_next_token(t_scanner *scanner, t_token *token) {
 }
 
 /**
+ * Rekurzívna funkcia, ktorá zaistí že sa správne budú ignorovať aj vnorené multiline komentáre
+ * lebo wren to dovoľuje
+ * @param scanner Ukazovateľ na scanner
+ */
+int ignore_multiline_comment(t_scanner *scanner) {
+    while (true) {
+        char c = next_char(scanner);
+        if (c == '*' && next_char(scanner) == '/') {
+            return 0;
+        }
+        if (c == '/' && next_char(scanner) == '*') {
+            if (ignore_multiline_comment(scanner) == 1) {
+                return 1;
+            }
+        }
+        if (c == EOF) {
+            return 1;
+        }
+    }
+}
+
+/**
  * Načíta ďalší znak zo vstupného súboru.
  * Alebo použije znak ktorý bol vrátený späť.
  * @param scanner Ukazovateľ na scanner.
  * @return Načítaný znak alebo EOF.
  */
-int next_char(t_scanner *scanner)
-{
-    int c;
+char next_char(t_scanner *scanner) {
+    char c;
 
     if (scanner->putback) 
     {
@@ -334,7 +510,7 @@ void putback(int c, t_scanner *scanner)
 }
 
 /**
- * Preskočí biele znaky (whitespace).
+ * Preskočí biele znaky (whitespace) okrem znakov nových riadkov <EOL>.
  * @param scanner Ukazovateľ na scanner.
  * @return Prvý ne-biely znak alebo EOF.
  */
@@ -343,8 +519,60 @@ int skip(t_scanner *scanner)
     int c;
 
     c = next_char(scanner);
-    while (' ' == c || '\t' == c || '\n' == c || '\r' == c || '\f' == c) {
+    while (' ' == c || '\t' == c || '\r' == c || '\f' == c) {
         c = next_char(scanner);
     }
     return c;
+}
+
+void check_keyword(char *possible, t_token *token) {
+    if (strcmp(possible, "class") == 0) {
+        token->value.keyword = KW_CLASS;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "if") == 0) {
+        token->value.keyword = KW_IF;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "else") == 0) {
+        token->value.keyword = KW_ELSE;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "is") == 0) {
+        token->value.keyword = KW_IS;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "null") == 0) {
+        token->value.keyword = KW_NULL_INST;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "return") == 0) {
+        token->value.keyword = KW_RETURN;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "var") == 0) {
+        token->value.keyword = KW_VAR;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "while") == 0) {
+        token->value.keyword = KW_WHILE;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "Ifj") == 0) {
+        token->value.keyword = KW_IFJ;
+        token->type = KEYWORD;
+    } else if (strcmp(possible, "static") == 0) {
+        token->value.keyword = KW_STATIC;
+        token->type = KEYWORD;
+    }else if(strcmp(possible, "import") == 0) {
+        token->value.keyword = KW_IMPORT;
+        token->type = KEYWORD;
+    }else if(strcmp(possible, "for") == 0) {
+        token->value.keyword = KW_FOR;
+        token->type = KEYWORD;
+    }else if(strcmp(possible, "Num") == 0) {
+        token->value.keyword = KW_NUM;
+        token->type = KEYWORD;
+    }else if(strcmp(possible, "String") == 0) {
+        token->value.keyword = KW_STRING;
+        token->type = KEYWORD;
+    }else if(strcmp(possible, "Null") == 0){
+        token->value.keyword = KW_NULL_TYPE;
+        token->type = KEYWORD;
+    }else{
+        token->type = IDENTIFIER;      
+    }
+    
 }
