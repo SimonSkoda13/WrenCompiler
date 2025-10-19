@@ -1,7 +1,0 @@
-// Simple IFJ25 test program
-// This is a placeholder for testing the compiler
-
-func main() {
-    // TODO: This will work once the compiler is implemented
-    Ifj.write("Hello from IFJ25 compiler!\n");
-}

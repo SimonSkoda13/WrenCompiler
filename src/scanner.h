@@ -5,6 +5,8 @@
  * Autori:
  *   - Martin Michálik (xmicham00)
  */
+#ifndef WRENCOMPILER_SCANNER_H
+#define WRENCOMPILER_SCANNER_H
 
 #include <stdio.h>
 #include <ctype.h>
@@ -14,6 +16,8 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+
 
 
 /**
@@ -39,7 +43,8 @@ typedef enum {
   NUM_INT,
   NUM_FLOAT,
   NUM_HEX,
-  NUM_EXP,
+  NUM_EXP_FLOAT,
+  NUM_EXP_INT,
   END_OF_FILE,
   STRING_OR_MULTILINE,
   STRING_LITERAL,
@@ -47,7 +52,8 @@ typedef enum {
   GLOBAL_VAR,
   EOL,
   DOT,
-  KEYWORD
+  KEYWORD,
+  COMMA
 } e_token_type;
 
 /**
@@ -122,3 +128,5 @@ void putback(int c, t_scanner *scanner);
 int skip(t_scanner *scanner);
 int ignore_multiline_comment(t_scanner *scanner);
 void check_keyword(char *possible, t_token *token);
+
+#endif /* WRENCOMPILER_SCANNER_H */

@@ -46,7 +46,8 @@ static void print_token(const t_token *t) {
     case NUM_INT: printf("NUM_INT %ld\n", t->value.number_int); break;
     case NUM_HEX: printf("NUM_HEX 0x%lx\n", (long)t->value.number_int); break;
     case NUM_FLOAT: printf("NUM_FLOAT %g\n", t->value.number_float); break;
-    case NUM_EXP: printf("NUM_EXP %g\n", t->value.number_float); break;
+    case NUM_EXP_FLOAT: printf("NUM_EXP_FLOAT %g\n", t->value.number_float); break;
+    case NUM_EXP_INT: printf("NUM_EXP_INT %ld\n", t->value.number_int); break;
     case STRING_OR_MULTILINE: printf("STRING_OR_MULTILINE\n"); break;
     case STRING_LITERAL:
         printf("STRING_LITERAL %s\n", t->value.string ? t->value.string : "");
@@ -65,6 +66,9 @@ static void print_token(const t_token *t) {
         break;
     case KEYWORD:
         printf("KEYWORD %s\n", keyword_to_string(t->value.keyword));
+        break;
+    case COMMA:
+        printf("COMMA ','\n");
         break;
     default:
         printf("UNKNOWN TOKEN (%d)\n", (int)t->type);
