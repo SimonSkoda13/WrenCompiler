@@ -30,6 +30,7 @@
 - **F22** = STRING_LITERAL
 - **F23** = IDENTIFIER_OR_KEYWORD
 - **F24** = GLOBAL_VAR
+- **F25** = DOT
 
 </div>
 
