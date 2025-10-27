@@ -9,6 +9,10 @@
  #ifndef WRENCOMPILER_ERRORS_H
  #define WRENCOMPILER_ERRORS_H
 
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
+
 /**
  * @brief Návratové chybové kódy prekladača IFJ25
  */
@@ -33,5 +37,7 @@ typedef enum {
 } e_error_code;
 
 extern e_error_code err_code;
+
+void exit_with_error(e_error_code code, const char *format, ...);
 
 #endif /* WRENCOMPILER_ERRORS_H */
