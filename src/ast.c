@@ -13,7 +13,7 @@
 #include <errno.h>
 #include <ctype.h>
 
-#include <ast.h>
+#include "ast.h"
 
 // Deklarácie funkcií na vytváranie AST uzlov
 AstNode *ast_create_program(AstNode *body, int line)
@@ -130,7 +130,7 @@ AstNode *ast_create_return(AstNode *value, int line)
         node->type = AST_RETURN;
         node->line = line;
         node->next = NULL;
-        node->data.return_stmt.value=value;
+        node->data.return_stmt.value = value;
         return node;
     }
     return NULL;
@@ -265,67 +265,72 @@ AstNode *ast_create_identifier(const char *name, int line)
     return NULL;
 }
 
-void ast_free(AstNode *node){
-    if (node == NULL) return;
+void ast_free(AstNode *node)
+{
+    if (node == NULL)
+        return;
 
-    switch (node->type) {
-        case AST_PROGRAM:
-            ast_free(node->data.program.body);
-            break;
-        case AST_FUNCTION:
-            free(node->data.function.name);
-            ast_free(node->data.function.params);
-            ast_free(node->data.function.body);
-            break;
-        case AST_VAR_DECL:
-            free(node->data.var_decl.var_name);
-            ast_free(node->data.var_decl.value);
-            break;
-        case AST_ASSIGNMENT:
-            ast_free(node->data.assignment.value);
-            ast_free(node->data.assignment.var);
-            break;
-        case AST_IF_COND:
-            ast_free(node->data.if_cond.condition);
-            ast_free(node->data.if_cond.else_branch);
-            ast_free(node->data.if_cond.then_branch);
-            break;
-        case AST_WHILE_LOOP:
-            ast_free(node->data.while_loop.body);
-            ast_free(node->data.while_loop.condition);
-            break;
-        case AST_BLOCK:
-            ast_free(node->data.block.body);
-            break;
-        case AST_RETURN:
-            ast_free(node->data.return_stmt.value);
-            break;
-        case AST_CALL:
-            ast_free(node->data.call.object);
-            free(node->data.call.func_name);
-            ast_free(node->data.call.args);
-            break;
-        case AST_BINARY_OP:
-            ast_free(node->data.binary.left);
-            ast_free(node->data.binary.right);
-            break;
-        case AST_UNARY_OP:
-            ast_free(node->data.unary.operand);
-            break;
-        case AST_TYPE_CHECK:
-            ast_free(node->data.type_check.operand);
-            ast_free(node->data.type_check.type_node);
-            break;
-        case AST_LITERAL_STRING:
-            free(node->data.literal.value.str_val);
-            break;
-        case AST_IDENTIFIER:
-            free(node->data.identifier.name);
-            break;
-        
+    switch (node->type)
+    {
+    case AST_PROGRAM:
+        ast_free(node->data.program.body);
+        break;
+    case AST_FUNCTION:
+        free(node->data.function.name);
+        ast_free(node->data.function.params);
+        ast_free(node->data.function.body);
+        break;
+    case AST_VAR_DECL:
+        free(node->data.var_decl.var_name);
+        ast_free(node->data.var_decl.value);
+        break;
+    case AST_ASSIGNMENT:
+        ast_free(node->data.assignment.value);
+        ast_free(node->data.assignment.var);
+        break;
+    case AST_IF_COND:
+        ast_free(node->data.if_cond.condition);
+        ast_free(node->data.if_cond.else_branch);
+        ast_free(node->data.if_cond.then_branch);
+        break;
+    case AST_WHILE_LOOP:
+        ast_free(node->data.while_loop.body);
+        ast_free(node->data.while_loop.condition);
+        break;
+    case AST_BLOCK:
+        ast_free(node->data.block.body);
+        break;
+    case AST_RETURN:
+        ast_free(node->data.return_stmt.value);
+        break;
+    case AST_CALL:
+        ast_free(node->data.call.object);
+        free(node->data.call.func_name);
+        ast_free(node->data.call.args);
+        break;
+    case AST_BINARY_OP:
+        ast_free(node->data.binary.left);
+        ast_free(node->data.binary.right);
+        break;
+    case AST_UNARY_OP:
+        ast_free(node->data.unary.operand);
+        break;
+    case AST_TYPE_CHECK:
+        ast_free(node->data.type_check.operand);
+        ast_free(node->data.type_check.type_node);
+        break;
+    case AST_LITERAL_STRING:
+        free(node->data.literal.value.str_val);
+        break;
+    case AST_IDENTIFIER:
+        free(node->data.identifier.name);
+        break;
+    case AST_LITERAL_INT://nic na uvolnenie
+    case AST_LITERAL_FLOAT:
+    case AST_LITERAL_NULL:
+        break;
     }
     ast_free(node->next);
 
     free(node);
-
 }

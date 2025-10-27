@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <scanner.h>//pouzitie enum e_token_type
+#include "scanner.h"//pouzitie enum e_token_type
 
 
 typedef enum {//Typy uzlov
