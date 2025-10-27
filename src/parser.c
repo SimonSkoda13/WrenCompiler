@@ -149,16 +149,14 @@ void param_list() {
     if (parser.current_token->type == RIGHT_PAREN) {
         return;
     }
-    if (parser.current_token->type != IDENTIFIER) {
-        exit_with_error(ERR_SYNTAX, "Syntax error: Expected parameter identifier at line %d", parser.scanner->line);
-    }
+    check_token(IDENTIFIER);
     param_list_tail();
 }
 
 void param_list_tail() {
     next_token();
     if (parser.current_token->type == COMMA) {
-        consume_token(IDENTIFIER); // parameter identifier
+        consume_token(IDENTIFIER);
         param_list_tail();
     } else if (parser.current_token->type == RIGHT_PAREN) {
         return;
@@ -213,13 +211,40 @@ void var_decl() {
 }
 
 void assign() {
-    if (check_token_type(IDENTIFIER) || check_token_type(GLOBAL_VAR)) {
-        consume_token(OP_ASSIGN); // '='
+    consume_token(OP_ASSIGN); // '='
+    next_token();
+    
+    // Check if it's a function call or expression
+    if (parser.current_token->type == KEYWORD && 
+        parser.current_token->value.keyword == KW_IFJ) {
+        // Built-in function call: Ifj.functionName(...)
+        func_call();
+        consume_token(EOL);
+    } else if (parser.current_token->type == IDENTIFIER) {
+        // Could be func_call or expression - need lookahead
+        t_token saved_identifier = *parser.current_token;
         next_token();
-        expression(); // Parse right-hand side as expression
-        check_token(EOL);
+        
+        if (parser.current_token->type == LEFT_PAREN) {
+            // It's a function call
+            putback_token(); // Put back '('
+            *parser.current_token = saved_identifier; // Restore identifier
+            func_call();
+            check_token(EOL);
+        } else if (parser.current_token->type == EOL) {
+            // Simple identifier assignment: x = y
+            return;
+        } else {
+            // It's an expression starting with identifier
+            putback_token(); // Put back the lookahead
+            *parser.current_token = saved_identifier; // Restore identifier
+            expression();
+            check_token(EOL);
+        }
     } else {
-        exit_with_error(ERR_SYNTAX, "Syntax error: Expected identifier or global variable at line %d", parser.scanner->line);
+        // It's an expression (literal, parenthesized expr, etc.)
+        expression();
+        check_token(EOL);
     }
 }
 
@@ -378,11 +403,6 @@ void term() {
         parser.current_token->type == STRING_LITERAL ||
         parser.current_token->type == NUM_EXP_INT ||
         parser.current_token->type == NUM_EXP_FLOAT) {
-        return;
-    } else if (parser.current_token->type == LEFT_PAREN) {
-        next_token();
-        expression();
-        check_token(RIGHT_PAREN);
         return;
     } else {
         exit_with_error(ERR_SYNTAX, "Syntax error: Invalid term at line %d", parser.scanner->line);
