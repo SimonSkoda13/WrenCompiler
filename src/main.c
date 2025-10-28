@@ -9,21 +9,34 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "parser.h"
 
 int main(int argc, char *argv[])
 {
-  printf("IFJ25 Compiler - Development Version\n");
-  printf("=====================================\n\n");
+    t_scanner scanner;
+    FILE *f = NULL;
 
-  if (argc < 2)
-  {
-    fprintf(stderr, "Usage: %s <source_file.ifj>\n", argv[0]);
-    return 1;
-  }
+    if (argc >= 2) {
+        f = fopen(argv[1], "r");
+        if (!f) {
+            fprintf(stderr, "Failed to open input file: %s\n", argv[1]);
+            return 1;
+        }
+        scanner.stream = f;
+    } else {
+        scanner.stream = stdin;
+    }
 
-  printf("Source file: %s\n", argv[1]);
-  printf("\nCompiler initialization successful!\n");
-  printf("TODO: Implement lexer, parser, semantic analysis, and code generation.\n");
-
-  return 0;
+    /* initialize scanner state members used by scanner.c */
+    /* these fields are present in your scanner implementation */
+    scanner.line = 1;
+    scanner.putback = 0;
+    t_token current_token, putback_token;
+    
+    parser.scanner = &scanner;
+    parser.current_token = &current_token;
+    parser.putback_token = &putback_token;  
+    parser.has_putback = false;
+    parse_program();
+    return 0;
 }

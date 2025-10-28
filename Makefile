@@ -23,9 +23,10 @@ EX1 = ex1-faktorial-iterativne
 EX2 = ex2-faktorial-rekurzivne
 EX3 = ex3-prace-s-retezci
 EX4 = ex4-ciselne-literaly
+EX5 = ex5-multiline-strings
 
-# Source files (will be added as you implement)
-SOURCES = $(wildcard $(SRC_DIR)/*.c)
+# Source files (exclude *_test.c files)
+SOURCES = $(filter-out %_test.c, $(wildcard $(SRC_DIR)/*.c))
 OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Default target
@@ -37,7 +38,7 @@ $(BUILD_DIR):
 
 # Build the compiler
 $(TARGET): $(OBJECTS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS)
+		$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS) $(LDLIBS)
 
 # Compile source files
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
@@ -71,6 +72,11 @@ $(SCAN)-test:
 	@./$(SCAN_PATH)$(SCAN)-test.o < $(EXPL_PATH)$(EX4).wren > $(SCAN_PATH)$(SCAN)$(CUR_TEST)$(EX4).output	
 	@echo "\nTest case 'ciselne-literaly' output differences:"
 	@diff -su $(SCAN_PATH)$(SCAN)$(REF_TEST)$(EX4).output $(SCAN_PATH)$(SCAN)$(CUR_TEST)$(EX4).output || exit 0
+
+	@echo "\n------------------------------------ 'multiline-string' ------------------------------------\n"
+	@./$(SCAN_PATH)$(SCAN)-test.o < $(EXPL_PATH)$(EX5).wren > $(SCAN_PATH)$(SCAN)$(CUR_TEST)$(EX5).output	
+	@echo "\nTest case 'multiline-string' output differences:"
+	@diff -su $(SCAN_PATH)$(SCAN)$(REF_TEST)$(EX5).output $(SCAN_PATH)$(SCAN)$(CUR_TEST)$(EX5).output || exit 0
 	
 
 $(SCAN)-clean:

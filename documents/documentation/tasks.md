@@ -1,5 +1,18 @@
 ## michalik
 
+## Task 3: Statement Parser (Recursive Descent)
+
+**Files:** `src/parser.c`, `src/parser.h`
+
+- Parse prolog and class skeleton
+- Parse function definitions (static functions, getters, setters)
+- Parse statements: `var`, `if-else`, `while`, `return`, assignment, function calls
+- Handle blocks and scoping
+- Verify main() function exists
+- Just scope of it
+
+---
+
 ## skoda
 
 ## magyjar
@@ -38,19 +51,6 @@
 - Parse type test operator: `is`
 - Handle parentheses
 - evaluate expressions using AST
-
----
-
-## Task 3: Statement Parser (Recursive Descent)
-
-**Files:** `src/parser.c`, `src/parser.h`
-
-- Parse prolog and class skeleton
-- Parse function definitions (static functions, getters, setters)
-- Parse statements: `var`, `if-else`, `while`, `return`, assignment, function calls
-- Handle blocks and scoping
-- Verify main() function exists
-- Just scope of it
 
 ---
 
@@ -123,3 +123,24 @@
 - Describe AVL tree implementation
 - Describe parser and codegen
 - Document team contributions
+
+## Non AI slop veci čo treba robiť
+
+### Expression parsing
+
+- Treba vlastne urobiť Task 2
+- Potom v `parser.c` bude nutné parsovať všetky expression
+- To by malo byť štýlom že sa k danému expression vygeneruje AST
+- Aby sa to dalo bude musieť byť implemtovaný stack a precedenčná tabuľka
+- Zatiaľ funkcia `expression()` v `parser.c` je len niečo aby parser spracoval ten súbor. (Nefunguje)
+
+### Semantická anylýza
+
+- Tu bude treba tabuľku symbolov
+- Treba v parseri aj zisťovať akého typu sú premenné
+- Proste ak budem mať niečo ako `foo = 2 + bar` tak musím dať pozor aby `bar` bol typu `Num`
+
+### Generovanie kódu
+
+- Mal by sa dať využiť AST
+- Bude to jebačka lebo stack frames a podobné srandy
