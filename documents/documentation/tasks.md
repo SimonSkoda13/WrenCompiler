@@ -2,16 +2,6 @@
 
 ## skoda
 
-## Task 1: Symbol Table (AVL Tree)
-
-**Files:** `src/symtable.c`, `src/symtable.h`
-
-- Implement AVL tree with insert/search/delete operations
-- Rotation functions: `far_right` and `far_left`
-- Store variables and functions with metadata
-
----
-
 ## magyjar
 
 ## Task: AST Implementation
