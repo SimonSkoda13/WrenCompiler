@@ -20,8 +20,8 @@
  * @param right Pravý potomok uzla (môže byť NULL).
  * @return Ukazovateľ na nový AST uzol, alebo NULL pri chybe alokácie.
  */
-AstNode *ast_create(t_token* token, AstNode *left, AstNode *right) {
-    AstNode *node = calloc(1, sizeof(AstNode));
+t_ast_node *ast_create(t_token* token, t_ast_node *left, t_ast_node *right) {
+    t_ast_node *node = calloc(1, sizeof(t_ast_node));
     if (node != NULL) {
         node->token = token;
         node->left = left;
@@ -38,8 +38,8 @@ AstNode *ast_create(t_token* token, AstNode *left, AstNode *right) {
  * @return Ukazovateľ na nový listový AST uzol, alebo NULL pri chybe alokácie.
  */
 
-AstNode *ast_create_leaf(t_token* token) {
-    AstNode *node = calloc(1, sizeof(AstNode));
+t_ast_node *ast_create_leaf(t_token* token) {
+    t_ast_node *node = calloc(1, sizeof(t_ast_node));
     if (node != NULL) {
         node->token = token;
         node->left = NULL;
@@ -54,7 +54,7 @@ AstNode *ast_create_leaf(t_token* token) {
  * @param node Ukazovateľ na koreň AST stromu na uvoľnenie (môže byť NULL).
  * @return void
  */
-void ast_free(AstNode *node) {
+void ast_free(t_ast_node *node) {
     if (node == NULL) return;
     ast_free(node->left);
     ast_free(node->right);

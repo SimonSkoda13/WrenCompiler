@@ -4,12 +4,23 @@
 
 **Files:** `src/parser.c`, `src/parser.h`
 
-- Parse prolog and class skeleton
-- Parse function definitions (static functions, getters, setters)
-- Parse statements: `var`, `if-else`, `while`, `return`, assignment, function calls
+- ~~Parse prolog and class skeleton~~
+- ~~Parse function definitions (static functions, getters, setters)~~
+- ~~Parse statements: `var`, `if-else`, `while`, `return`, assignment, function calls~~
 - Handle blocks and scoping
-- Verify main() function exists
-- Just scope of it
+- ~~Verify main() function exists~~
+
+## Task 2: Expression Parser (Precedence Analysis)
+
+**Files:** `src/expression.c`, `src/expression.h`
+
+- ~~Build precedence table for operators~~
+- ~~Parse arithmetic operators: `+`, `-`, `*`, `/`~~
+- ~~Parse string operators: `+` (concat), `*` (iteration)~~
+- ~~Parse relational operators: `<`, `>`, `<=`, `>=`, `==`, `!=`~~
+- ~~Parse type test operator: `is`~~
+- ~~Handle parentheses~~
+- ~~build AST for parsed expression~~
 
 ---
 
@@ -30,27 +41,9 @@
 
 ## Task 4: Stack implementation
 
-**Files:** `src/stack.c`, `src/stack.h`
-
-- Implement stack data structure for various uses
-- Functions: push, pop, peek, is_empty
-- Implement pop so it returns .data of the top element
-
 ---
 
 ## Possible tasks
-
-## Task 2: Expression Parser (Precedence Analysis)
-
-**Files:** `src/expression.c`, `src/expression.h`
-
-- Build precedence table for operators
-- Parse arithmetic operators: `+`, `-`, `*`, `/`
-- Parse string operators: `+` (concat), `*` (iteration)
-- Parse relational operators: `<`, `>`, `<=`, `>=`, `==`, `!=`
-- Parse type test operator: `is`
-- Handle parentheses
-- evaluate expressions using AST
 
 ---
 
@@ -128,19 +121,30 @@
 
 ### Expression parsing
 
-- Treba vlastne urobiť Task 2
-- Potom v `parser.c` bude nutné parsovať všetky expression
-- To by malo byť štýlom že sa k danému expression vygeneruje AST
-- Aby sa to dalo bude musieť byť implemtovaný stack a precedenčná tabuľka
-- Zatiaľ funkcia `expression()` v `parser.c` je len niečo aby parser spracoval ten súbor. (Nefunguje)
+- [x] Treba vlastne urobiť Task 2
+- [x] Potom v `parser.c` bude nutné parsovať všetky expression
+- [x] To by malo byť štýlom že sa k danému expression vygeneruje AST
+- [x] Aby sa to dalo bude musieť byť implemtovaný stack a precedenčná tabuľka
+- ~~Zatiaľ funkcia `expression()` v `parser.c` je len niečo aby parser spracoval ten súbor. (Nefunguje)~~
+- [ ] Parsovanie a vytváranie AST z výrazov už nejako funguje. Treba ale to skontrolovať a hlavne poriešiť ake error kódy
+      by sa mali vraciať t parsovania výrazov (zatiaľ sa vracia 2 - syntaktická chyba) ale podľa zadanie bude treba
+      kontrolovať aj typy vo výrazoch takže buď sa to bude robiť priamo pri parsovaní výrazu alebo sa skontroluje
+      vygenerovaný AST
+- [ ] Nie je to veľmi otestované na edge-case takže bolo by to trochu otestovať
 
 ### Semantická anylýza
 
 - Tu bude treba tabuľku symbolov
 - Treba v parseri aj zisťovať akého typu sú premenné
 - Proste ak budem mať niečo ako `foo = 2 + bar` tak musím dať pozor aby `bar` bol typu `Num`
+- Tiež zisťovať použitie nedeklarovanej funkcie alebo premennej
+- Treba dávať pozor aj na nesprávne volania funkcii (nesprávny počet prametrov alebo typ)
+- Kontrolovať redeklarácie
+- Asi samostatná symtable pre globálne premenné ostatné musia byť podľa scope
 
 ### Generovanie kódu
 
 - Mal by sa dať využiť AST
 - Bude to jebačka lebo stack frames a podobné srandy
+- Keď mám AST k výrazu tak viem vygenerovať správne inštrukcie v IFJcode25 tak aby hodnota výrazu bola správna
+- V `parser.c` doplniť funkcie rekurzívneho zostupu o generovanie kódu (po tom čo ostané kontroly prebehnú v poriadku)

@@ -24,6 +24,7 @@ EX2 = ex2-faktorial-rekurzivne
 EX3 = ex3-prace-s-retezci
 EX4 = ex4-ciselne-literaly
 EX5 = ex5-multiline-strings
+EX6 = ex6-expressions
 
 # Source files (exclude *_test.c files)
 SOURCES = $(filter-out %_test.c, $(wildcard $(SRC_DIR)/*.c))
