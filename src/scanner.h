@@ -52,7 +52,8 @@ typedef enum {
   EOL,
   DOT,
   KEYWORD,
-  COMMA
+  COMMA,
+  OP_IS
 } e_token_type;
 
 /**

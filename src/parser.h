@@ -11,7 +11,7 @@
 
 #include "scanner.h"
 #include "errors.h"
-#include <stdbool.h>
+#include "expression.h"
 
 /**
  * @struct Štruktúra pre parser.

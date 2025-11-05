@@ -8,6 +8,98 @@
 
  #include "parser.h"
 
+// DEBUG
+void ast_print_tree(t_ast_node *node, int depth) {
+    if (node == NULL) {
+        return;
+    }
+    // Print indentation
+    for (int i = 0; i < depth; i++) {
+        printf("  ");
+    }
+    
+    // Print node information
+    switch (node->token->type) {
+        case OP_ADD:
+            printf("OP_ADD (+)\n");
+            break;
+        case OP_SUB:
+            printf("OP_SUB (-)\n");
+            break;
+        case OP_MUL:
+            printf("OP_MUL (*)\n");
+            break;
+        case OP_DIV:
+            printf("OP_DIV (/)\n");
+            break;
+        case OP_LESS_THAN:
+            printf("OP_LESS_THAN (<)\n");
+            break;
+        case OP_LESS_EQUAL:
+            printf("OP_LESS_EQUAL (<=)\n");
+            break;
+        case OP_GREATER_THAN:
+            printf("OP_GREATER_THAN (>)\n");
+            break;
+        case OP_GREATER_THAN_EQUAL:
+            printf("OP_GREATER_THAN_EQUAL (>=)\n");
+            break;
+        case OP_EQUALS:
+            printf("OP_EQUALS (==)\n");
+            break;
+        case OP_NOT_EQUALS:
+            printf("OP_NOT_EQUALS (!=)\n");
+            break;
+        case OP_IS:
+            printf("OP_IS (is)\n");
+            break;
+        case NUM_INT:
+            printf("NUM_INT (%ld)\n", node->token->value.number_int);
+            break;
+        case NUM_FLOAT:
+            printf("NUM_FLOAT (%g)\n", node->token->value.number_float);
+            break;
+        case NUM_EXP_INT:
+            printf("NUM_EXP_INT (%ld)\n", node->token->value.number_int);
+            break;
+        case NUM_EXP_FLOAT:
+            printf("NUM_EXP_FLOAT (%g)\n", node->token->value.number_float);
+            break;
+        case STRING_LITERAL:
+            printf("STRING_LITERAL (\"%s\")\n", node->token->value.string);
+            break;
+        case IDENTIFIER:
+            printf("IDENTIFIER (%s)\n", node->token->value.string);
+            break;
+        case GLOBAL_VAR:
+            printf("GLOBAL_VAR (%s)\n", node->token->value.string);
+            break;
+        case KEYWORD:
+            if (node->token->value.keyword == KW_NULL_TYPE || 
+                node->token->value.keyword == KW_NULL_INST) {
+                printf("KEYWORD (%s)\n", "null");
+            } else if (node->token->value.keyword == KW_NUM) {
+                printf("KEYWORD (%s)\n", "Num");
+            } else if (node->token->value.keyword == KW_STRING) {
+                printf("KEYWORD (%s)\n", "String");
+            } else
+            printf("KEYWORD (%s)\n", "unknown");
+            break;
+        default:
+            printf("UNKNOWN_TYPE (%d)\n", node->token->type);
+            break;
+    }
+    
+    // Recursively print left and right children
+    if (node->left != NULL) {
+        ast_print_tree(node->left, depth + 1);
+    }
+    if (node->right != NULL) {
+        ast_print_tree(node->right, depth + 1);
+    }
+}
+
+
  void next_token() {
     // Check if we have a putback token first
     if (parser.has_putback) {
@@ -236,14 +328,12 @@ void assign() {
             return;
         } else {
             // It's an expression starting with identifier
-            putback_token(); // Put back the lookahead
-            *parser.current_token = saved_identifier; // Restore identifier
-            expression();
+            expression(&saved_identifier, parser.current_token);
             check_token(EOL);
         }
     } else {
         // It's an expression (literal, parenthesized expr, etc.)
-        expression();
+        expression(parser.current_token, NULL);
         check_token(EOL);
     }
 }
@@ -255,9 +345,8 @@ void if_statement() {
     }
     
     consume_token(LEFT_PAREN); // '('
-    next_token();
-    expression();
-    check_token(RIGHT_PAREN); // ')'
+    expression(parser.current_token, NULL);
+    putback_token(); // Putback { after expression
     block();
     consume_token(KEYWORD); // 'else'
     if (parser.current_token->value.keyword != KW_ELSE) {
@@ -274,9 +363,8 @@ void while_statement() {
     }
     
     consume_token(LEFT_PAREN); // '('
-    next_token();
-    expression();
-    check_token(RIGHT_PAREN); // ')'
+    expression(parser.current_token, NULL);
+    putback_token(); // Putback { after expression
     block();
 }
 
@@ -289,7 +377,7 @@ void return_statement() {
     if (parser.current_token->type == EOL) {
         //TODO: Handle empty return
     } else {
-        expression();
+        expression(parser.current_token, NULL);
     }
     check_token(EOL);
 }
@@ -321,14 +409,14 @@ void arg_list() {
     if (parser.current_token->type == RIGHT_PAREN) {
         return;
     }
-    expression();
+    //TODO: handle function argument
+    next_token();
     arg_list_tail();
 }
 
 void arg_list_tail() {
     if (parser.current_token->type == COMMA) {
         next_token();
-        expression();
         arg_list_tail();
     } else if (parser.current_token->type == RIGHT_PAREN) {
         return;
@@ -337,9 +425,16 @@ void arg_list_tail() {
     }
 }
 
-void expression() {
-    term();
-    expression_continue();
+void expression(t_token *token1, t_token *token2) {
+    t_ast_node *ast;
+    int err_code;
+    err_code = parse_expression(token1, token2, &ast);
+    if (err_code) {
+        exit_with_error(ERR_SEM_OTHER, "Semantic error: Parsing expression %d", parser.scanner->line);
+    }
+    // For debugging
+    // printf("Expression AST:\n");
+    // ast_print_tree(ast, 0);
 }
 
 void expression_continue() {

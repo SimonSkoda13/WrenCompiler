@@ -25,7 +25,7 @@ typedef struct AstNode {
     t_token* token;          
     struct AstNode* left;  
     struct AstNode* right;
-} AstNode;
+} t_ast_node;
 
 /**
  * Vytvorí nový AST uzol s tokenom a dvoma potomkami.
@@ -34,20 +34,20 @@ typedef struct AstNode {
  * @param right Pravý potomok uzla (môže byť NULL).
  * @return Ukazovateľ na nový AST uzol, alebo NULL pri chybe alokácie.
  */
-AstNode *ast_create(t_token *token, AstNode *left, AstNode *right);
+t_ast_node *ast_create(t_token *token, t_ast_node *left, t_ast_node *right);
 
 /**
  * Vytvorí nový listový AST uzol (bez potomkov).
  * @param token Ukazovateľ na token, ktorý sa uloží do listového uzla.
  * @return Ukazovateľ na nový listový AST uzol, alebo NULL pri chybe alokácie.
  */
-AstNode *ast_create_leaf(t_token* token);
+t_ast_node *ast_create_leaf(t_token* token);
 
 /**
  * Uvoľní pamäť použitú AST uzlom a jeho potomkami rekurzívne.
  * @param node Ukazovateľ na koreň AST stromu na uvoľnenie (môže byť NULL).
  * @return void
  */
-void ast_free(AstNode *node);
+void ast_free(t_ast_node *node);
 
 #endif // WRENCOMPILER_AST_H
