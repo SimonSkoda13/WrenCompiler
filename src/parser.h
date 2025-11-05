@@ -12,6 +12,9 @@
 #include "scanner.h"
 #include "errors.h"
 #include "expression.h"
+#include "generator.h"
+#include "symtable.h"
+#include "ast.h"
 
 /**
  * @struct Štruktúra pre parser.
@@ -21,12 +24,19 @@ typedef struct {
     t_token *current_token;
     t_token *putback_token;
     bool has_putback;
+    t_symtable *symtable;  // Tabuľka symbolov
 } t_parser;
 
 /**
  * Globálna inštancia parsera.
  */
 t_parser parser;
+
+/**
+ * Buffer pre odloženie generovania funkcie main
+ */
+extern FILE *main_output_buffer;
+extern bool is_generating_main;
 
 /**
  * Deklarácie funkcií parsera.
@@ -121,10 +131,11 @@ void arg_list();
 void arg_list_tail();
 /**
  * Spracuje výraz.
- * @todo Treba prerobiť tak aby to rovno parsovalo výrazy za pomoci AST a precedenčnej tabuľky.
- * Ideálne by sme sa potom mahli zbaviť funkcií expression_continue a op.
+ * @param token1 Prvý token výrazu
+ * @param token2 Druhý token výrazu (môže byť NULL)
+ * @return Ukazovateľ na AST koreň výrazu
  */
-void expression();
+t_ast_node* expression(t_token *token1, t_token *token2);
 void expression_continue();
 /**
  * Spracuje terminál vo výraze.

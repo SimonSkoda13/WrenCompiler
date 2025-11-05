@@ -8,6 +8,10 @@
 
  #include "parser.h"
 
+// Buffer pre odložené generovanie funkcie main
+FILE *main_output_buffer = NULL;
+bool is_generating_main = false;
+
 // DEBUG
 void ast_print_tree(t_ast_node *node, int depth) {
     if (node == NULL) {
@@ -215,25 +219,96 @@ void func() {
         exit_with_error(ERR_SYNTAX, "Syntax error: Expected 'static' keyword at line %d", parser.scanner->line);
     }
     consume_token(IDENTIFIER); // function IDENTIFIER
+    
+    // Uložíme názov funkcie
+    char *func_name = parser.current_token->value.string;
+    
+    // Skontrolujeme či funkcia už neexistuje
+    t_avl_node *existing = symtable_search(parser.symtable, func_name);
+    if (existing != NULL) {
+        exit_with_error(ERR_SEM_REDEF, 
+            "Semantic error: Function '%s' already declared at line %d", 
+            func_name, parser.scanner->line);
+    }
+    
     next_token();
     // static getter
     if (parser.current_token->type == LEFT_BRACE) {
+        // Getter - 0 parametrov, TYPE_UNKNOWN návratový typ
+        bool success = symtable_insert_func(parser.symtable, func_name, 
+                                           0, NULL, TYPE_UNKNOWN);
+        if (!success) {
+            exit_with_error(ERR_INTERNAL, 
+                "Internal error: Failed to insert getter '%s' into symbol table at line %d", 
+                func_name, parser.scanner->line);
+        }
+        generate_function_start(func_name);
         putback_token(); 
         block();
+        generate_function_end(func_name);
         return;
     } else if (parser.current_token->type == OP_ASSIGN) { // static setter
+        // Setter - 1 parameter, TYPE_UNKNOWN typ
+        e_data_type param_type = TYPE_UNKNOWN;
+        bool success = symtable_insert_func(parser.symtable, func_name, 
+                                           1, &param_type, TYPE_UNKNOWN);
+        if (!success) {
+            exit_with_error(ERR_INTERNAL, 
+                "Internal error: Failed to insert setter '%s' into symbol table at line %d", 
+                func_name, parser.scanner->line);
+        }
+        generate_function_start(func_name);
         consume_token(LEFT_PAREN);
         consume_token(IDENTIFIER);
         consume_token(RIGHT_PAREN);
         block();
+        generate_function_end(func_name);
         return;
     }
     
-    //TODO: Handle function 
+    //TODO: Handle function parameters properly
     check_token(LEFT_PAREN); // '('
+    // Zatiaľ vložíme funkciu s 0 parametrami
+    bool success = symtable_insert_func(parser.symtable, func_name, 
+                                       0, NULL, TYPE_UNKNOWN);
+    if (!success) {
+        exit_with_error(ERR_INTERNAL, 
+            "Internal error: Failed to insert function '%s' into symbol table at line %d", 
+            func_name, parser.scanner->line);
+    }
     param_list();
     check_token(RIGHT_PAREN); // ')'
-    block(); // function body
+    
+    // Ak je to funkcia main, presmerujeme výstup do bufferu
+    if (strcmp(func_name, "main") == 0) {
+        main_output_buffer = tmpfile();
+        if (main_output_buffer == NULL) {
+            exit_with_error(ERR_INTERNAL, 
+                "Internal error: Failed to create temporary buffer for main function");
+        }
+        
+        // Uložíme pôvodný stdout a presmerujeme na buffer
+        FILE *original_stdout = stdout;
+        stdout = main_output_buffer;
+        is_generating_main = true;
+        
+        // Vygenerujeme začiatok funkcie (LABEL, CREATEFRAME, PUSHFRAME)
+        generate_function_start(func_name);
+        
+        block(); // function body
+        
+        // Vygenerujeme koniec funkcie (POPFRAME, RETURN)
+        generate_function_end(func_name);
+        
+        // Obnovíme stdout
+        stdout = original_stdout;
+        is_generating_main = false;
+    } else {
+        // Pre ostatné funkcie generujeme priamo
+        generate_function_start(func_name);
+        block(); // function body
+        generate_function_end(func_name);
+    }
 }
 
 void param_list() {
@@ -299,12 +374,50 @@ void statement() {
 void var_decl() {
     check_token(KEYWORD); // 'var'
     consume_token(IDENTIFIER); // variable name
+    
+    // Získame meno premennej
+    char *var_name = parser.current_token->value.string;
+    
+    // Skontrolujeme či premenná už existuje v tabuľke symbolov
+    t_avl_node *existing = symtable_search(parser.symtable, var_name);
+    if (existing != NULL) {
+        // Premenná už existuje - sémantická chyba (redefinícia)
+        exit_with_error(ERR_SEM_REDEF, 
+            "Semantic error: Variable '%s' already declared at line %d", 
+            var_name, parser.scanner->line);
+    }
+    
+    // Pridáme premennú do tabuľky symbolov bez konkrétneho typu (TYPE_UNKNOWN)
+    bool success = symtable_insert_var(parser.symtable, var_name, 
+                                       SYM_VAR_LOCAL, TYPE_UNKNOWN);
+    if (!success) {
+        exit_with_error(ERR_INTERNAL, 
+            "Internal error: Failed to insert variable '%s' into symbol table at line %d", 
+            var_name, parser.scanner->line);
+    }
+    
+    // Vygenerujeme kód pre deklaráciu premennej
+    generate_var_declaration(var_name);
+    
     consume_token(EOL);
 }
 
 void assign() {
+    // Uložíme názov premennej pred consume_token
+    char *var_name = parser.current_token->value.string;
+    
+    // Skontrolujeme či premenná existuje v tabuľke symbolov
+    t_avl_node *var_node = symtable_search(parser.symtable, var_name);
+    if (var_node == NULL) {
+        exit_with_error(ERR_SEM_UNDEF, 
+            "Semantic error: Variable '%s' is not defined at line %d", 
+            var_name, parser.scanner->line);
+    }
+    
     consume_token(OP_ASSIGN); // '='
     next_token();
+    
+    t_ast_node *ast = NULL;
     
     // Check if it's a function call or expression
     if (parser.current_token->type == KEYWORD && 
@@ -325,15 +438,19 @@ void assign() {
             check_token(EOL);
         } else if (parser.current_token->type == EOL) {
             // Simple identifier assignment: x = y
+            ast = expression(&saved_identifier, NULL);
+            generate_assignment(var_name, ast);
             return;
         } else {
             // It's an expression starting with identifier
-            expression(&saved_identifier, parser.current_token);
+            ast = expression(&saved_identifier, parser.current_token);
+            generate_assignment(var_name, ast);
             check_token(EOL);
         }
     } else {
         // It's an expression (literal, parenthesized expr, etc.)
-        expression(parser.current_token, NULL);
+        ast = expression(parser.current_token, NULL);
+        generate_assignment(var_name, ast);
         check_token(EOL);
     }
 }
@@ -345,7 +462,7 @@ void if_statement() {
     }
     
     consume_token(LEFT_PAREN); // '('
-    expression(parser.current_token, NULL);
+    (void)expression(parser.current_token, NULL); // Zatiaľ ignorujeme AST
     putback_token(); // Putback { after expression
     block();
     consume_token(KEYWORD); // 'else'
@@ -363,7 +480,7 @@ void while_statement() {
     }
     
     consume_token(LEFT_PAREN); // '('
-    expression(parser.current_token, NULL);
+    (void)expression(parser.current_token, NULL); // Zatiaľ ignorujeme AST
     putback_token(); // Putback { after expression
     block();
 }
@@ -377,7 +494,7 @@ void return_statement() {
     if (parser.current_token->type == EOL) {
         //TODO: Handle empty return
     } else {
-        expression(parser.current_token, NULL);
+        (void)expression(parser.current_token, NULL); // Zatiaľ ignorujeme AST
     }
     check_token(EOL);
 }
@@ -387,9 +504,36 @@ void func_call() {
         //TODO: Handle built-in function calls
         consume_token(DOT);
         consume_token(IDENTIFIER);
+        char* func_name = parser.current_token->value.string;
         consume_token(LEFT_PAREN); // '('
-        arg_list();
-        check_token(RIGHT_PAREN); // ')'
+        if (strcmp(func_name, "write") == 0) {
+            next_token();
+            if (parser.current_token->type == STRING_LITERAL) {
+                builtin_write_string_literal(parser.current_token->value.string);
+            } else if (parser.current_token->type == NUM_FLOAT || parser.current_token->type == NUM_EXP_FLOAT) {
+                builtin_write_float_literal(parser.current_token->value.number_float);
+            } else if (parser.current_token->type == NUM_INT || parser.current_token->type == NUM_EXP_INT) {
+                builtin_write_integer_literal(parser.current_token->value.number_int);
+            } else if (parser.current_token->type == IDENTIFIER) { 
+                //check symtable if exists throw error if not
+                t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+                if (var_node == NULL) {
+                    exit_with_error(ERR_SEM_UNDEF,
+                        "Semantic error: Variable '%s' is not defined at line %d",
+                        parser.current_token->value.string, parser.scanner->line);
+                }
+                //if exists call builtin_write_var that will call correct write with varible
+                builtin_write_var(parser.current_token->value.string);
+
+            } else {
+                exit_with_error(ERR_SYNTAX, "Syntax error: Invalid argument to write() at line %d", parser.scanner->line);
+            }
+            
+            consume_token(RIGHT_PAREN); // ')'
+        } else {
+            arg_list();
+            check_token(RIGHT_PAREN); // ')'
+        }
     } else {
         check_token(IDENTIFIER); // function name
         next_token();
@@ -425,7 +569,7 @@ void arg_list_tail() {
     }
 }
 
-void expression(t_token *token1, t_token *token2) {
+t_ast_node* expression(t_token *token1, t_token *token2) {
     t_ast_node *ast;
     int err_code;
     err_code = parse_expression(token1, token2, &ast);
@@ -435,6 +579,7 @@ void expression(t_token *token1, t_token *token2) {
     // For debugging
     // printf("Expression AST:\n");
     // ast_print_tree(ast, 0);
+    return ast;
 }
 
 void expression_continue() {
@@ -541,8 +686,39 @@ void eols() {
 
 void parse_program() {
     prolog();
+    generate_header();
     program();
     next_token();
     eols();
     consume_token(END_OF_FILE);
+    
+    // Skontrolujeme, či existuje funkcia main
+    t_avl_node *main_func = symtable_search(parser.symtable, "main");
+    if (main_func == NULL) {
+        exit_with_error(ERR_SEM_UNDEF, 
+            "Semantic error: Function 'main' is not defined");
+    }
+    
+    // Skontrolujeme, či main je funkcia (nie getter/setter)
+    if (main_func->ifj_sym_type != SYM_FUNCTION) {
+        exit_with_error(ERR_SEM_OTHER, 
+            "Semantic error: 'main' must be a function, not a getter or setter");
+    }
+    
+    // Ak sme generovali main do bufferu, vypíšeme ho teraz na konci
+    if (main_output_buffer != NULL) {
+        // Vrátime sa na začiatok bufferu
+        rewind(main_output_buffer);
+        
+        // Prečítame a vypíšeme obsah bufferu
+        char buffer[4096];
+        size_t bytes_read;
+        while ((bytes_read = fread(buffer, 1, sizeof(buffer), main_output_buffer)) > 0) {
+            fwrite(buffer, 1, bytes_read, stdout);
+        }
+        
+        // Zatvoríme a uvoľníme buffer
+        fclose(main_output_buffer);
+        main_output_buffer = NULL;
+    }
 }

@@ -33,10 +33,20 @@ int main(int argc, char *argv[])
     scanner.putback = 0;
     t_token current_token, putback_token;
     
+    /* initialize symbol table */
+    t_symtable symtable;
+    symtable_init(&symtable);
+    
     parser.scanner = &scanner;
     parser.current_token = &current_token;
     parser.putback_token = &putback_token;  
     parser.has_putback = false;
+    parser.symtable = &symtable;
+    
     parse_program();
+    
+    /* cleanup symbol table */
+    symtable_destroy(&symtable);
+    
     return 0;
 }
