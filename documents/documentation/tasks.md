@@ -28,12 +28,13 @@
 
 ## magyjar
 
-## Task: AST Implementation
+## Task 6: Built-in Functions
 
-**Files:** `src/ast.c`, `src/ast.h`
+**Files:** `src/builtins.c`, `src/builtins.h`
 
-- Define AST node structures
-- Implement functions to create and manipulate AST nodes
+- Implement: `Ifj.read_str()`, `Ifj.read_num()`, `Ifj.write()`
+- Implement: `Ifj.floor()`, `Ifj.str()`
+- Implement: `Ifj.length()`, `Ifj.substring()`, `Ifj.strcmp()`, `Ifj.ord()`, `Ifj.chr()`
 
 ---
 
@@ -70,15 +71,7 @@
 
 ---
 
-## Task 6: Built-in Functions
 
-**Files:** `src/builtins.c`, `src/builtins.h`
-
-- Implement: `Ifj.read_str()`, `Ifj.read_num()`, `Ifj.write()`
-- Implement: `Ifj.floor()`, `Ifj.str()`
-- Implement: `Ifj.length()`, `Ifj.substring()`, `Ifj.strcmp()`, `Ifj.ord()`, `Ifj.chr()`
-
----
 
 ## Task 7: Error Handling
 
