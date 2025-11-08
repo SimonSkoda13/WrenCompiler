@@ -22,6 +22,12 @@
 - ~~Handle parentheses~~
 - ~~build AST for parsed expression~~
 
+## Task: Generovanie uživateľom vytvorených funkcii
+
+- Generácia uživateľských funkcii
+- Volanie funkcii
+- Preťažovanie funkcii
+
 ---
 
 ## skoda
@@ -70,8 +76,6 @@
 - Generate runtime type checks
 
 ---
-
-
 
 ## Task 7: Error Handling
 
