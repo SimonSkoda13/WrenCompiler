@@ -87,7 +87,7 @@ bool symtable_insert_var(t_symtable *ifj_table, const char *ifj_key,
 // Returns true if success, false otherwise
 bool symtable_insert_func(t_symtable *ifj_table, const char *ifj_key,
                           int ifj_param_count, e_data_type *ifj_param_types,
-                          e_data_type ifj_return_type);
+                          e_data_type ifj_return_type, e_symbol_type ifj_sym_type);
 
 // Search for symbol in table
 // Returns pointer to node or NULL if not found

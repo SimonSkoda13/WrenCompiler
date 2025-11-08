@@ -43,6 +43,9 @@ int main(int argc, char *argv[])
     parser.has_putback = false;
     parser.symtable = &symtable;
     
+    // Nastavíme globálnu symtable pre generátor (pre gettery vo výrazoch)
+    generator_set_symtable(&symtable);
+    
     parse_program();
     
     /* cleanup symbol table */

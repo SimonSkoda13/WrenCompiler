@@ -223,61 +223,145 @@ void func() {
     // Uložíme názov funkcie
     char *func_name = parser.current_token->value.string;
     
-    // Skontrolujeme či funkcia už neexistuje
-    t_avl_node *existing = symtable_search(parser.symtable, func_name);
-    if (existing != NULL) {
-        exit_with_error(ERR_SEM_REDEF, 
-            "Semantic error: Function '%s' already declared at line %d", 
-            func_name, parser.scanner->line);
-    }
-    
     next_token();
     // static getter
     if (parser.current_token->type == LEFT_BRACE) {
         // Getter - 0 parametrov, TYPE_UNKNOWN návratový typ
-        bool success = symtable_insert_func(parser.symtable, func_name, 
-                                           0, NULL, TYPE_UNKNOWN);
+        // Vytvoríme manglované meno pre getter
+        char *mangled_name = mangle_getter_name(func_name);
+        if (mangled_name == NULL) {
+            exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle getter name");
+        }
+        
+        // Skontrolujeme či getter už neexistuje
+        t_avl_node *existing = symtable_search(parser.symtable, mangled_name);
+        if (existing != NULL) {
+            free(mangled_name);
+            exit_with_error(ERR_SEM_REDEF, 
+                "Semantic error: Getter '%s' already declared at line %d", 
+                func_name, parser.scanner->line);
+        }
+        
+        bool success = symtable_insert_func(parser.symtable, mangled_name, 
+                                           0, NULL, TYPE_UNKNOWN, SYM_GETTER);
+        
         if (!success) {
             exit_with_error(ERR_INTERNAL, 
                 "Internal error: Failed to insert getter '%s' into symbol table at line %d", 
                 func_name, parser.scanner->line);
         }
-        generate_function_start(func_name);
+        t_param_list empty_params = {.count = 0};
+        generate_function_start(func_name, mangled_name, &empty_params);  // true = getter
+        
+        // Vstúpime do nového scope pre lokálne premenné gettera
+        symtable_enter_scope(parser.symtable);
+        
         putback_token(); 
         block();
+        
+        // Opustíme scope
+        symtable_exit_scope(parser.symtable);
+        
         generate_function_end(func_name);
+        free(mangled_name);
         return;
     } else if (parser.current_token->type == OP_ASSIGN) { // static setter
         // Setter - 1 parameter, TYPE_UNKNOWN typ
+        // Vytvoríme manglované meno pre setter
+        char *mangled_name = mangle_setter_name(func_name);
+        if (mangled_name == NULL) {
+            exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle setter name");
+        }
+        
+        // Skontrolujeme či setter už neexistuje
+        t_avl_node *existing = symtable_search(parser.symtable, mangled_name);
+        if (existing != NULL) {
+            free(mangled_name);
+            exit_with_error(ERR_SEM_REDEF, 
+                "Semantic error: Setter '%s' already declared at line %d", 
+                func_name, parser.scanner->line);
+        }
+        
         e_data_type param_type = TYPE_UNKNOWN;
-        bool success = symtable_insert_func(parser.symtable, func_name, 
-                                           1, &param_type, TYPE_UNKNOWN);
+        bool success = symtable_insert_func(parser.symtable, mangled_name, 
+                                           1, &param_type, TYPE_UNKNOWN, SYM_SETTER);
         if (!success) {
             exit_with_error(ERR_INTERNAL, 
                 "Internal error: Failed to insert setter '%s' into symbol table at line %d", 
                 func_name, parser.scanner->line);
         }
-        generate_function_start(func_name);
         consume_token(LEFT_PAREN);
         consume_token(IDENTIFIER);
+        char *param_name = parser.current_token->value.string;
         consume_token(RIGHT_PAREN);
+        
+        t_param_list setter_params = {.count = 1};
+        setter_params.names[0] = param_name;
+        generate_function_start(func_name, mangled_name, &setter_params);  // false = nie getter
+        free(mangled_name);
+        
+        // Vstúpime do nového scope pre lokálne premenné settera
+        symtable_enter_scope(parser.symtable);
+        
+        // Vložíme parameter settera do symboltabuľky ako lokálnu premennú
+        bool param_success = symtable_insert_var(parser.symtable, param_name, 
+                                                 SYM_VAR_LOCAL, TYPE_UNKNOWN);
+        if (!param_success) {
+            exit_with_error(ERR_INTERNAL, 
+                "Internal error: Failed to insert setter parameter '%s' into symbol table at line %d", 
+                param_name, parser.scanner->line);
+        }
+        
         block();
+        
+        // Opustíme scope
+        symtable_exit_scope(parser.symtable);
+        
         generate_function_end(func_name);
         return;
     }
     
-    //TODO: Handle function parameters properly
     check_token(LEFT_PAREN); // '('
-    // Zatiaľ vložíme funkciu s 0 parametrami
-    bool success = symtable_insert_func(parser.symtable, func_name, 
-                                       0, NULL, TYPE_UNKNOWN);
+    
+    // Parsujeme zoznam parametrov
+    t_param_list params;
+    param_list(&params);
+    check_token(RIGHT_PAREN); // ')'
+    
+    // Vytvoríme manglované meno pre vloženie do symtable
+    char *mangled_name = mangle_function_name(func_name, params.count);
+    if (mangled_name == NULL) {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
+    }
+    
+    // Skontrolujeme či funkcia s touto aritou už neexistuje
+    t_avl_node *existing = symtable_search(parser.symtable, mangled_name);
+    if (existing != NULL) {
+        free(mangled_name);
+        exit_with_error(ERR_SEM_REDEF, 
+            "Semantic error: Function '%s' with %d parameters already declared at line %d", 
+            func_name, params.count, parser.scanner->line);
+    }
+    
+    // Vložíme funkciu do symbol table s počtom parametrov
+    // TODO: Momentálne používame TYPE_UNKNOWN pre typy parametrov
+    e_data_type *param_types = NULL;
+    if (params.count > 0) {
+        param_types = malloc(params.count * sizeof(e_data_type));
+        for (int i = 0; i < params.count; i++) {
+            param_types[i] = TYPE_UNKNOWN;
+        }
+    }
+    
+    bool success = symtable_insert_func(parser.symtable, mangled_name, 
+                                       params.count, param_types, TYPE_UNKNOWN, SYM_FUNCTION);
+    if (param_types) free(param_types);
+    
     if (!success) {
         exit_with_error(ERR_INTERNAL, 
             "Internal error: Failed to insert function '%s' into symbol table at line %d", 
             func_name, parser.scanner->line);
     }
-    param_list();
-    check_token(RIGHT_PAREN); // ')'
     
     // Ak je to funkcia main, presmerujeme výstup do bufferu
     if (strcmp(func_name, "main") == 0) {
@@ -293,9 +377,26 @@ void func() {
         is_generating_main = true;
         
         // Vygenerujeme začiatok funkcie (LABEL, CREATEFRAME, PUSHFRAME)
-        generate_function_start(func_name);
+        generate_function_start(func_name, mangled_name, &params);  // false = nie getter
+        
+        // Vstúpime do nového scope pre lokálne premenné funkcie
+        symtable_enter_scope(parser.symtable);
+        
+        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné
+        for (int i = 0; i < params.count; i++) {
+            bool param_success = symtable_insert_var(parser.symtable, params.names[i], 
+                                                     SYM_VAR_LOCAL, TYPE_UNKNOWN);
+            if (!param_success) {
+                exit_with_error(ERR_INTERNAL, 
+                    "Internal error: Failed to insert parameter '%s' into symbol table at line %d", 
+                    params.names[i], parser.scanner->line);
+            }
+        }
         
         block(); // function body
+        
+        // Opustíme scope a vyčistíme lokálne premenné
+        symtable_exit_scope(parser.symtable);
         
         // Vygenerujeme koniec funkcie (POPFRAME, RETURN)
         generate_function_end(func_name);
@@ -303,28 +404,68 @@ void func() {
         // Obnovíme stdout
         stdout = original_stdout;
         is_generating_main = false;
+        
+        free(mangled_name);
     } else {
         // Pre ostatné funkcie generujeme priamo
-        generate_function_start(func_name);
+        generate_function_start(func_name, mangled_name, &params);  // false = nie getter
+        
+        // Vstúpime do nového scope pre lokálne premenné funkcie
+        symtable_enter_scope(parser.symtable);
+        
+        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné
+        for (int i = 0; i < params.count; i++) {
+            bool param_success = symtable_insert_var(parser.symtable, params.names[i], 
+                                                     SYM_VAR_LOCAL, TYPE_UNKNOWN);
+            if (!param_success) {
+                exit_with_error(ERR_INTERNAL, 
+                    "Internal error: Failed to insert parameter '%s' into symbol table at line %d", 
+                    params.names[i], parser.scanner->line);
+            }
+        }
+        
         block(); // function body
+        
+        // Opustíme scope a vyčistíme lokálne premenné
+        symtable_exit_scope(parser.symtable);
+        
         generate_function_end(func_name);
+        free(mangled_name);
     }
 }
 
-void param_list() {
+void param_list(t_param_list *params) {
+    params->count = 0;
+    
     next_token();
     if (parser.current_token->type == RIGHT_PAREN) {
         return;
     }
     check_token(IDENTIFIER);
-    param_list_tail();
+    
+    // Pridáme prvý parameter
+    if (params->count < MAX_PARAMS) {
+        params->names[params->count++] = parser.current_token->value.string;
+    } else {
+        exit_with_error(ERR_INTERNAL, "Internal error: Too many parameters at line %d", parser.scanner->line);
+    }
+    
+    param_list_tail(params);
 }
 
-void param_list_tail() {
+void param_list_tail(t_param_list *params) {
     next_token();
     if (parser.current_token->type == COMMA) {
         consume_token(IDENTIFIER);
-        param_list_tail();
+        
+        // Pridáme ďalší parameter
+        if (params->count < MAX_PARAMS) {
+            params->names[params->count++] = parser.current_token->value.string;
+        } else {
+            exit_with_error(ERR_INTERNAL, "Internal error: Too many parameters at line %d", parser.scanner->line);
+        }
+        
+        param_list_tail(params);
     } else if (parser.current_token->type == RIGHT_PAREN) {
         return;
     } else {
@@ -403,17 +544,65 @@ void var_decl() {
 }
 
 void assign() {
-    // Uložíme názov premennej pred consume_token
-    char *var_name = parser.current_token->value.string;
+    // Uložíme názov identifieru pred consume_token
+    char *identifier = parser.current_token->value.string;
     
-    // Skontrolujeme či premenná existuje v tabuľke symbolov
-    t_avl_node *var_node = symtable_search(parser.symtable, var_name);
+    // Skontrolujeme či to môže byť setter
+    char *setter_mangled = mangle_setter_name(identifier);
+    t_avl_node *setter_node = NULL;
+    if (setter_mangled != NULL) {
+        setter_node = symtable_search(parser.symtable, setter_mangled);
+        free(setter_mangled);
+    }
+    
+    // Ak je to setter, spracujeme ho
+    if (setter_node != NULL && setter_node->ifj_sym_type == SYM_SETTER) {
+        // Je to setter - spracujeme ako volanie funkcie s 1 parametrom
+        consume_token(OP_ASSIGN); // '='
+        next_token();
+        
+        // Spracujeme argument (literál alebo identifikátor)
+        if (parser.current_token->type == STRING_LITERAL) {
+            generate_push_string_literal(parser.current_token->value.string);
+        } else if (parser.current_token->type == NUM_INT || parser.current_token->type == NUM_EXP_INT || parser.current_token->type == NUM_HEX) {
+            generate_push_int_literal(parser.current_token->value.number_int);
+        } else if (parser.current_token->type == NUM_FLOAT || parser.current_token->type == NUM_EXP_FLOAT) {
+            generate_push_float_literal(parser.current_token->value.number_float);
+        } else if (parser.current_token->type == IDENTIFIER) {
+            // Skontrolujeme či premenná existuje
+            t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+            if (var_node == NULL) {
+                exit_with_error(ERR_SEM_UNDEF,
+                    "Semantic error: Variable '%s' is not defined at line %d",
+                    parser.current_token->value.string, parser.scanner->line);
+            }
+            generate_push_variable(parser.current_token->value.string);
+        } else if (parser.current_token->type == KEYWORD && 
+                   (parser.current_token->value.keyword == KW_NULL_TYPE || 
+                    parser.current_token->value.keyword == KW_NULL_INST)) {
+            generate_push_null();
+        } else {
+            exit_with_error(ERR_SYNTAX, 
+                "Syntax error: Setter argument must be a literal or identifier at line %d", 
+                parser.scanner->line);
+        }
+        
+        // Zavoláme setter (argument je už na zásobníku)
+        generate_setter_call(identifier);
+        
+        consume_token(EOL);
+        return;
+    }
+    
+    // Nie je to setter - musí to byť premenná
+    t_avl_node *var_node = symtable_search(parser.symtable, identifier);
     if (var_node == NULL) {
         exit_with_error(ERR_SEM_UNDEF, 
             "Semantic error: Variable '%s' is not defined at line %d", 
-            var_name, parser.scanner->line);
+            identifier, parser.scanner->line);
     }
     
+    char *var_name = identifier;
     consume_token(OP_ASSIGN); // '='
     next_token();
     
@@ -434,11 +623,39 @@ void assign() {
             // It's a function call
             putback_token(); // Put back '('
             *parser.current_token = saved_identifier; // Restore identifier
-            func_call();
-            check_token(EOL);
+            
+            char *func_name = parser.current_token->value.string;
+            
+            consume_token(LEFT_PAREN);
+            int arg_count = arg_list();
+            check_token(RIGHT_PAREN);
+            
+            // Skontrolujeme či funkcia s touto aritou existuje
+            char *mangled_name = mangle_function_name(func_name, arg_count);
+            if (mangled_name == NULL) {
+                exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
+            }
+            
+            t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
+            free(mangled_name);
+            
+            if (func_node == NULL) {
+                exit_with_error(ERR_SEM_UNDEF,
+                    "Semantic error: Function '%s' with %d parameters is not defined at line %d",
+                    func_name, arg_count, parser.scanner->line);
+            }
+            
+            // Vygenerujeme volanie funkcie s počtom argumentov
+            generate_function_call(func_name, arg_count);
+            
+            // Skopírujeme návratovú hodnotu do premennej
+            generate_move_retval_to_var(var_name);
+            
+            consume_token(EOL);
         } else if (parser.current_token->type == EOL) {
             // Simple identifier assignment: x = y
-            ast = expression(&saved_identifier, NULL);
+            // Musíme predať EOL ako druhý token, aby precedenčný parser vedel, že výraz končí
+            ast = expression(&saved_identifier, parser.current_token);
             generate_assignment(var_name, ast);
             return;
         } else {
@@ -492,9 +709,12 @@ void return_statement() {
     }
     next_token();
     if (parser.current_token->type == EOL) {
-        //TODO: Handle empty return
+        // Prázdny return - vrátime null
+        generate_return_value(NULL);
     } else {
-        (void)expression(parser.current_token, NULL); // Zatiaľ ignorujeme AST
+        // Return s výrazom - získame AST a vygenerujeme kód
+        t_ast_node *ast = expression(parser.current_token, NULL);
+        generate_return_value(ast);
     }
     check_token(EOL);
 }
@@ -536,36 +756,127 @@ void func_call() {
         }
     } else {
         check_token(IDENTIFIER); // function name
+        char *func_name = parser.current_token->value.string;
+        
         next_token();
         if (parser.current_token->type == EOL) {
-            // Static getter
+            // Static getter - 0 parametrov
+            char *mangled_name = mangle_function_name(func_name, 0);
+            if (mangled_name == NULL) {
+                exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
+            }
+            
+            t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
+            free(mangled_name);
+            
+            if (func_node == NULL) {
+                exit_with_error(ERR_SEM_UNDEF,
+                    "Semantic error: Function '%s' with 0 parameters is not defined at line %d",
+                    func_name, parser.scanner->line);
+            }
             return;
         } else {
             check_token(LEFT_PAREN); // '('
-            arg_list();
+            int arg_count = arg_list();
             check_token(RIGHT_PAREN); // ')'
+            
+            // Skontrolujeme či funkcia s touto aritou existuje
+            char *mangled_name = mangle_function_name(func_name, arg_count);
+            if (mangled_name == NULL) {
+                exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
+            }
+            
+            t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
+            free(mangled_name);
+            
+            if (func_node == NULL) {
+                exit_with_error(ERR_SEM_UNDEF,
+                    "Semantic error: Function '%s' with %d parameters is not defined at line %d",
+                    func_name, arg_count, parser.scanner->line);
+            }
+            
+            // Vygenerujeme volanie funkcie s počtom argumentov
+            generate_function_call(func_name, arg_count);
         }
         consume_token(EOL);
     }
 }
-void arg_list() {
+int arg_list() {
     next_token();
     if (parser.current_token->type == RIGHT_PAREN) {
-        return;
+        // Žiadne argumenty
+        return 0;
     }
-    //TODO: handle function argument
-    next_token();
-    arg_list_tail();
+    
+    // Prvý argument - môže byť len literál alebo identifikátor (nie výraz)
+    if (parser.current_token->type == STRING_LITERAL) {
+        generate_push_string_literal(parser.current_token->value.string);
+    } else if (parser.current_token->type == NUM_INT || parser.current_token->type == NUM_EXP_INT) {
+        generate_push_int_literal(parser.current_token->value.number_int);
+    } else if (parser.current_token->type == NUM_FLOAT || parser.current_token->type == NUM_EXP_FLOAT) {
+        generate_push_float_literal(parser.current_token->value.number_float);
+    } else if (parser.current_token->type == IDENTIFIER) {
+        // Skontrolujeme či premenná existuje
+        t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+        if (var_node == NULL) {
+            exit_with_error(ERR_SEM_UNDEF,
+                "Semantic error: Variable '%s' is not defined at line %d",
+                parser.current_token->value.string, parser.scanner->line);
+        }
+        generate_push_variable(parser.current_token->value.string);
+    } else if (parser.current_token->type == KEYWORD && 
+               (parser.current_token->value.keyword == KW_NULL_TYPE || 
+                parser.current_token->value.keyword == KW_NULL_INST)) {
+        generate_push_null();
+    } else {
+        exit_with_error(ERR_SYNTAX, 
+            "Syntax error: Function argument must be a literal or identifier at line %d", 
+            parser.scanner->line);
+    }
+    
+    // 1 za tento argument + počet z arg_list_tail
+    return 1 + arg_list_tail();
 }
 
-void arg_list_tail() {
+int arg_list_tail() {
+    next_token();
     if (parser.current_token->type == COMMA) {
+        // Ďalší argument
         next_token();
-        arg_list_tail();
+        
+        // Argument - môže byť len literál alebo identifikátor (nie výraz)
+        if (parser.current_token->type == STRING_LITERAL) {
+            generate_push_string_literal(parser.current_token->value.string);
+        } else if (parser.current_token->type == NUM_INT || parser.current_token->type == NUM_EXP_INT) {
+            generate_push_int_literal(parser.current_token->value.number_int);
+        } else if (parser.current_token->type == NUM_FLOAT || parser.current_token->type == NUM_EXP_FLOAT) {
+            generate_push_float_literal(parser.current_token->value.number_float);
+        } else if (parser.current_token->type == IDENTIFIER) {
+            // Skontrolujeme či premenná existuje
+            t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+            if (var_node == NULL) {
+                exit_with_error(ERR_SEM_UNDEF,
+                    "Semantic error: Variable '%s' is not defined at line %d",
+                    parser.current_token->value.string, parser.scanner->line);
+            }
+            generate_push_variable(parser.current_token->value.string);
+        } else if (parser.current_token->type == KEYWORD && 
+                   (parser.current_token->value.keyword == KW_NULL_TYPE || 
+                    parser.current_token->value.keyword == KW_NULL_INST)) {
+            generate_push_null();
+        } else {
+            exit_with_error(ERR_SYNTAX, 
+                "Syntax error: Function argument must be a literal or identifier at line %d", 
+                parser.scanner->line);
+        }
+        
+        // 1 za tento argument + rekurzívne volanie
+        return 1 + arg_list_tail();
     } else if (parser.current_token->type == RIGHT_PAREN) {
-        return;
+        return 0;
     } else {
         exit_with_error(ERR_SYNTAX, "Syntax error: Expected ',' or ')' at line %d", parser.scanner->line);
+        return 0; // unreachable, ale kvôli warning
     }
 }
 

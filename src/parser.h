@@ -79,12 +79,14 @@ void func_list();
 void func();
 /**
  * Spracuje zoznam parametrov funkcie.
+ * @param params Ukazovateľ na štruktúru kde sa uložia názvy parametrov
  */
-void param_list();
+void param_list(t_param_list *params);
 /**
  * Spracuje zvyšok zoznamu parametrov funkcie po prvom parametri.
+ * @param params Ukazovateľ na štruktúru kde sa uložia názvy parametrov
  */
-void param_list_tail();
+void param_list_tail(t_param_list *params);
 /**
  * Spracuje blok kódu uzavretý v zložených zátvorkách. { ... }
  */
@@ -123,12 +125,14 @@ void func_call();
 void return_statement();
 /**
  * Spracuje zoznam argumentov funkcie.
+ * @return Počet argumentov
  */
-void arg_list();
+int arg_list();
 /**
  * Spracuje zvyšok zoznamu argumentov funkcie po prvom argumente.
+ * @return Počet argumentov v tomto volaní (0 alebo viac)
  */
-void arg_list_tail();
+int arg_list_tail();
 /**
  * Spracuje výraz.
  * @param token1 Prvý token výrazu

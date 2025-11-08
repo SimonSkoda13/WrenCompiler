@@ -9,6 +9,7 @@
 #include "symtable.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 // ============================================================================
 // Helper functions for AVL tree operations
@@ -372,7 +373,7 @@ bool symtable_insert_var(t_symtable *ifj_table, const char *ifj_key,
 
 bool symtable_insert_func(t_symtable *ifj_table, const char *ifj_key,
                           int ifj_param_count, e_data_type *ifj_param_types,
-                          e_data_type ifj_return_type)
+                          e_data_type ifj_return_type, e_symbol_type ifj_sym_type)
 {
   if (ifj_table == NULL || ifj_key == NULL)
   {
@@ -385,8 +386,8 @@ bool symtable_insert_func(t_symtable *ifj_table, const char *ifj_key,
     return false;
   }
 
-  // insert function node
-  t_avl_node *ifj_new_root = insert_recursive(ifj_table->ifj_root, ifj_key, SYM_FUNCTION);
+  // insert function node (SYM_FUNCTION, SYM_GETTER, or SYM_SETTER)
+  t_avl_node *ifj_new_root = insert_recursive(ifj_table->ifj_root, ifj_key, ifj_sym_type);
 
   if (ifj_new_root == NULL)
   {
@@ -509,20 +510,45 @@ static t_avl_node *delete_recursive(t_avl_node *ifj_node, const char *ifj_key,
       {
         ifj_temp = ifj_node;
         ifj_node = NULL;
+        
+        // free deleted node
+        free(ifj_temp->ifj_key);
+        if (ifj_temp->ifj_sym_type == SYM_FUNCTION &&
+            ifj_temp->ifj_data.ifj_func.ifj_param_types != NULL)
+        {
+          free(ifj_temp->ifj_data.ifj_func.ifj_param_types);
+        }
+        free(ifj_temp);
       }
-      else // one child
+      else // one child - musíme použiť pointer swap namiesto shallow copy
       {
-        *ifj_node = *ifj_temp; // copy contents
+        // Uložíme si pointery ktoré musíme uvoľniť
+        char *old_key = ifj_node->ifj_key;
+        e_data_type *old_param_types = NULL;
+        if (ifj_node->ifj_sym_type == SYM_FUNCTION &&
+            ifj_node->ifj_data.ifj_func.ifj_param_types != NULL)
+        {
+          old_param_types = ifj_node->ifj_data.ifj_func.ifj_param_types;
+        }
+        
+        // Skopírujeme všetky skalárne hodnoty
+        ifj_node->ifj_key = ifj_temp->ifj_key;
+        ifj_node->ifj_sym_type = ifj_temp->ifj_sym_type;
+        ifj_node->ifj_data = ifj_temp->ifj_data;
+        ifj_node->ifj_height = ifj_temp->ifj_height;
+        ifj_node->ifj_left = ifj_temp->ifj_left;
+        ifj_node->ifj_right = ifj_temp->ifj_right;
+        
+        // Uvoľníme staré dáta z ifj_node
+        free(old_key);
+        if (old_param_types != NULL)
+        {
+          free(old_param_types);
+        }
+        
+        // Uvoľníme len ifj_temp node (nie jeho dáta, lebo ich teraz vlastní ifj_node)
+        free(ifj_temp);
       }
-
-      // free deleted node
-      free(ifj_temp->ifj_key);
-      if (ifj_temp->ifj_sym_type == SYM_FUNCTION &&
-          ifj_temp->ifj_data.ifj_func.ifj_param_types != NULL)
-      {
-        free(ifj_temp->ifj_data.ifj_func.ifj_param_types);
-      }
-      free(ifj_temp);
     }
     else
     {
@@ -538,7 +564,34 @@ static t_avl_node *delete_recursive(t_avl_node *ifj_node, const char *ifj_key,
       ifj_node->ifj_key = (char *)malloc(strlen(ifj_temp->ifj_key) + 1);
       strcpy(ifj_node->ifj_key, ifj_temp->ifj_key);
       ifj_node->ifj_sym_type = ifj_temp->ifj_sym_type;
-      ifj_node->ifj_data = ifj_temp->ifj_data;
+      
+      // Deep copy of data - musíme skopírovať aj alokované polia
+      if (ifj_temp->ifj_sym_type == SYM_FUNCTION || 
+          ifj_temp->ifj_sym_type == SYM_GETTER || 
+          ifj_temp->ifj_sym_type == SYM_SETTER) {
+        // Najprv uvoľníme staré param_types ak existujú
+        if (ifj_node->ifj_sym_type == SYM_FUNCTION &&
+            ifj_node->ifj_data.ifj_func.ifj_param_types != NULL) {
+          free(ifj_node->ifj_data.ifj_func.ifj_param_types);
+        }
+        
+        ifj_node->ifj_data.ifj_func.ifj_param_count = ifj_temp->ifj_data.ifj_func.ifj_param_count;
+        ifj_node->ifj_data.ifj_func.ifj_return_type = ifj_temp->ifj_data.ifj_func.ifj_return_type;
+        
+        // Deep copy param_types array
+        if (ifj_temp->ifj_data.ifj_func.ifj_param_types != NULL) {
+          int param_count = ifj_temp->ifj_data.ifj_func.ifj_param_count;
+          ifj_node->ifj_data.ifj_func.ifj_param_types = malloc(param_count * sizeof(e_data_type));
+          for (int i = 0; i < param_count; i++) {
+            ifj_node->ifj_data.ifj_func.ifj_param_types[i] = ifj_temp->ifj_data.ifj_func.ifj_param_types[i];
+          }
+        } else {
+          ifj_node->ifj_data.ifj_func.ifj_param_types = NULL;
+        }
+      } else {
+        // Pre premenné len skopírujeme union (shallow copy je OK)
+        ifj_node->ifj_data = ifj_temp->ifj_data;
+      }
 
       // delete the succesor
       bool ifj_temp_deleted;
@@ -600,8 +653,13 @@ static void collect_scope_keys(t_avl_node *ifj_node, int ifj_scope,
        ifj_node->ifj_sym_type == SYM_VAR_GLOBAL) &&
       ifj_node->ifj_data.ifj_var.ifj_scope_level == ifj_scope)
   {
-    ifj_keys[*ifj_count] = ifj_node->ifj_key;
-    (*ifj_count)++;
+    // IMPORTANT: Copy the key string, don't just store pointer!
+    // The tree will be modified during deletion, which may change key pointers
+    ifj_keys[*ifj_count] = malloc(strlen(ifj_node->ifj_key) + 1);
+    if (ifj_keys[*ifj_count] != NULL) {
+      strcpy(ifj_keys[*ifj_count], ifj_node->ifj_key);
+      (*ifj_count)++;
+    }
   }
 
   // traverse right
@@ -629,6 +687,9 @@ void symtable_exit_scope(t_symtable *ifj_table)
   for (int ifj_i = 0; ifj_i < ifj_delete_count; ifj_i++)
   {
     symtable_delete(ifj_table, ifj_to_delete[ifj_i]);
+    
+    // Free the copied key string
+    free(ifj_to_delete[ifj_i]);
   }
 }
 

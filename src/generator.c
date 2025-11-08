@@ -7,6 +7,14 @@
  */
 
 #include "generator.h"
+#include "symtable.h"
+
+// Globálna premenná pre prístup k tabuľke symbolov pri generovaní kódu
+static t_symtable *global_symtable = NULL;
+
+void generator_set_symtable(t_symtable *ifj_symtable) {
+    global_symtable = ifj_symtable;
+}
 
 int must_escape(unsigned char c) {
     return (c <= 32 || c == 35 || c == 92);
@@ -60,6 +68,70 @@ char* convert_to_escaped_string(const char *input) {
     return output;
 }
 
+char* mangle_function_name(const char *func_name, int param_count) {
+    if (func_name == NULL) {
+        return NULL;
+    }
+    
+    // Špeciálny prípad pre main - nemanglujeme
+    if (strcmp(func_name, "main") == 0) {
+        char *result = malloc(strlen(func_name) + 1);
+        if (result == NULL) {
+            return NULL;
+        }
+        strcpy(result, func_name);
+        return result;
+    }
+    
+    // Vypočítame potrebnú veľkosť: "functionName$arityN\0"
+    // max 10 číslic pre int + "$arity" (6 znakov) + pôvodné meno + '\0'
+    size_t len = strlen(func_name) + 6 + 10 + 1;
+    char *mangled = malloc(len);
+    
+    if (mangled == NULL) {
+        return NULL;
+    }
+    
+    snprintf(mangled, len, "%s$arity%d", func_name, param_count);
+    return mangled;
+}
+
+char* mangle_getter_name(const char *getter_name) {
+    if (getter_name == NULL) {
+        return NULL;
+    }
+    
+    // Vypočítame potrebnú veľkosť: "getterName$get\0"
+    // "$get" (4 znaky) + pôvodné meno + '\0'
+    size_t len = strlen(getter_name) + 4 + 1;
+    char *mangled = malloc(len);
+    
+    if (mangled == NULL) {
+        return NULL;
+    }
+    
+    snprintf(mangled, len, "%s$get", getter_name);
+    return mangled;
+}
+
+char* mangle_setter_name(const char *setter_name) {
+    if (setter_name == NULL) {
+        return NULL;
+    }
+    
+    // Vypočítame potrebnú veľkosť: "setterName$set\0"
+    // "$set" (4 znaky) + pôvodné meno + '\0'
+    size_t len = strlen(setter_name) + 4 + 1;
+    char *mangled = malloc(len);
+    
+    if (mangled == NULL) {
+        return NULL;
+    }
+    
+    snprintf(mangled, len, "%s$set", setter_name);
+    return mangled;
+}
+
 void generate_header() {
     printf(".IFJcode25\n");
     printf("JUMP $$main\n");
@@ -91,17 +163,28 @@ void generate_var_declaration(const char *var_name) {
     printf("DEFVAR LF@%s\n", var_name);
 }
 
-void generate_function_start(const char *func_name) {
+void generate_function_start(const char *func_name, const char *mangled_name, t_param_list *params) {
     // Vygenerujeme label pre funkciu
     if (strcmp(func_name, "main") == 0) {
         printf("LABEL $$main\n");
     } else {
-        printf("LABEL $$%s\n", func_name);
+        printf("LABEL $%s\n", mangled_name);
     }
     
     // Vytvoríme a aktivujeme lokálny rámec
     printf("CREATEFRAME\n");
     printf("PUSHFRAME\n");
+    
+    // Najprv definujeme všetky premenné pre parametre
+    for (int i = 0; i < params->count; i++) {
+        printf("DEFVAR LF@%s\n", params->names[i]);
+    }
+    
+    // Potom popneme parametre zo zásobníka v opačnom poradí
+    // (posledný parameter bol pushnutý ako posledný, takže je na vrchu zásobníka)
+    for (int i = params->count - 1; i >= 0; i--) {
+        printf("POPS LF@%s\n", params->names[i]);
+    }
 }
 
 void generate_function_end(const char *func_name) {
@@ -109,6 +192,106 @@ void generate_function_end(const char *func_name) {
     if (strcmp(func_name, "main") != 0) {
         printf("RETURN\n");   
     }
+}
+
+void generate_return_value(t_ast_node *ast) {
+    if (ast == NULL) {
+        // Prázdny return - vrátime null na zásobník
+        printf("PUSHS nil@nil\n");
+    } else if (ast->left == NULL && ast->right == NULL) {
+        // Jednoduchý literál alebo premenná - pushneme priamo na zásobník
+        char value_str[512];
+        get_value_string(ast, value_str, sizeof(value_str));
+        printf("PUSHS %s\n", value_str);
+    } else {
+        // Komplexný výraz - vygenerujeme ho a pushneme výsledok na zásobník
+        char result_var[256];
+        int err = generate_expression_code(ast, result_var, sizeof(result_var));
+        if (err) {
+            exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate return expression code");
+        }
+        printf("PUSHS %s\n", result_var);
+    }
+}
+
+void generate_push_argument(t_ast_node *ast) {
+    if (ast == NULL) {
+        exit_with_error(ERR_INTERNAL, "Internal error: NULL AST in generate_push_argument");
+    }
+    
+    if (ast->left == NULL && ast->right == NULL) {
+        // Jednoduchý literál alebo premenná - pushneme priamo na zásobník
+        char value_str[512];
+        get_value_string(ast, value_str, sizeof(value_str));
+        printf("PUSHS %s\n", value_str);
+    } else {
+        // Komplexný výraz - vygenerujeme ho a pushneme výsledok na zásobník
+        char result_var[256];
+        int err = generate_expression_code(ast, result_var, sizeof(result_var));
+        if (err) {
+            exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate argument expression code");
+        }
+        printf("PUSHS %s\n", result_var);
+    }
+}
+
+void generate_push_string_literal(const char *str) {
+    char *escaped = convert_to_escaped_string(str);
+    if (escaped == NULL) {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to convert string to escaped format");
+    }
+    printf("PUSHS string@%s\n", escaped);
+    free(escaped);
+}
+
+void generate_push_int_literal(long long value) {
+    printf("PUSHS int@%lld\n", value);
+}
+
+void generate_push_float_literal(double value) {
+    printf("PUSHS float@%a\n", value);
+}
+
+void generate_push_variable(const char *var_name) {
+    printf("PUSHS LF@%s\n", var_name);
+}
+
+void generate_push_null() {
+    printf("PUSHS nil@nil\n");
+}
+
+void generate_function_call(const char *func_name, int arg_count) {
+    // Vytvoríme manglované meno funkcie podľa počtu argumentov
+    char *mangled_name = mangle_function_name(func_name, arg_count);
+    if (mangled_name == NULL) {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
+    }
+    
+    // Argumenty sú už na zásobníku (pushnuté arg_list)
+    // Zavoláme funkciu s manglovaným menom
+    printf("CALL $%s\n", mangled_name);
+    
+    free(mangled_name);
+}
+
+void generate_setter_call(const char *setter_name) {
+    // Vytvoríme manglované meno pre setter
+    char *mangled_name = mangle_setter_name(setter_name);
+    if (mangled_name == NULL) {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle setter name");
+    }
+    
+    // Argument je už na zásobníku
+    // Zavoláme setter
+    printf("CALL $%s\n", mangled_name);
+    
+    free(mangled_name);
+}
+
+void generate_move_retval_to_var(const char *var_name) {
+    // Po návrate z funkcie je návratová hodnota na zásobníku
+    // Popneme ju do lokálnej premennej
+    printf("POPS LF@%s\n", var_name);
 }
 
 // Pomocná premenná pre generovanie dočasných premenných
@@ -123,11 +306,33 @@ int get_next_temp_var() {
 }
 
 /**
- * @brief Pomocná funkcia pre vytvorenie hodnoty (literálu alebo premennej) pre inštrukcie
- * @param node AST uzol
- * @param result Buffer pre výsledok (formát "int@123", "string@...", "LF@var")
- * @param result_size Veľkosť bufferu
+ * @brief Skontroluje či identifier je getter a ak áno, vygeneruje jeho volanie
+ * @param identifier_name Názov identifieru
+ * @param ifj_symtable Ukazovateľ na tabuľku symbolov
+ * @return 1 ak je getter, 0 ak nie je getter
  */
+int generate_getter_call_if_needed(const char *identifier_name, t_symtable *ifj_symtable) {
+    // Vytvoríme manglované meno pre getter
+    char *mangled_name = mangle_getter_name(identifier_name);
+    if (mangled_name == NULL) {
+        return 0;
+    }
+    
+    // Skontrolujeme či existuje getter s týmto menom
+    t_avl_node *node = symtable_search(ifj_symtable, mangled_name);
+    
+    if (node != NULL && node->ifj_sym_type == SYM_GETTER) {
+        // Je to getter - vygenerujeme volanie
+        // Getter je bezparametrická funkcia ktorá vráti hodnotu na zásobník
+        printf("CALL $%s\n", mangled_name);
+        free(mangled_name);
+        return 1;
+    }
+    
+    free(mangled_name);
+    return 0;
+}
+
 void get_value_string(t_ast_node *node, char *result, size_t result_size) {
     if (node == NULL || node->token == NULL) {
         result[0] = '\0';
@@ -137,6 +342,7 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size) {
     switch (node->token->type) {
         case NUM_INT:
         case NUM_EXP_INT:
+        case NUM_HEX:
             snprintf(result, result_size, "int@%ld", node->token->value.number_int);
             break;
         case NUM_FLOAT:
@@ -163,12 +369,6 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size) {
     }
 }
 
-/**
- * @brief Rekurzívna funkcia pre generovanie kódu z AST
- * @param node Aktuálny AST uzol
- * @param result_var Názov premennej kde sa uloží výsledok (formát: "LF@__tmp0")
- * @return 0 pri úspechu, inak error kód
- */
 int generate_expression_code(t_ast_node *node, char *result_var, size_t result_var_size) {
     if (node == NULL) {
         return ERR_INTERNAL;
@@ -176,6 +376,21 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     
     // Ak je to list (literál alebo premenná), jednoducho skopírujeme hodnotu
     if (node->left == NULL && node->right == NULL) {
+        // Ak je to IDENTIFIER, môže to byť getter
+        if (node->token != NULL && node->token->type == IDENTIFIER && global_symtable != NULL) {
+            // Skontrolujeme či je to getter
+            if (generate_getter_call_if_needed(node->token->value.string, global_symtable)) {
+                // Bol to getter - vygeneroval sa CALL, výsledok je na zásobníku
+                // Musíme ho popnúť do dočasnej premennej
+                int tmp_num = get_next_temp_var();
+                snprintf(result_var, result_var_size, "LF@__tmp%d", tmp_num);
+                printf("DEFVAR %s\n", result_var);
+                printf("POPS %s\n", result_var);
+                return 0;
+            }
+        }
+        
+        // Nie je to getter, použijeme štandardné spracovanie
         get_value_string(node, result_var, result_var_size);
         return 0;
     }
@@ -271,6 +486,17 @@ void generate_assignment(const char *var_name, t_ast_node *ast) {
     
     // Ak je to jednoduchý literál alebo premenná, priamo priradíme
     if (ast->left == NULL && ast->right == NULL) {
+        // Skontrolujeme či to nie je getter
+        if (ast->token != NULL && ast->token->type == IDENTIFIER && global_symtable != NULL) {
+            if (generate_getter_call_if_needed(ast->token->value.string, global_symtable)) {
+                // Je to getter - zavolali sme ho, výsledok je na zásobníku
+                // Popneme ho do cieľovej premennej
+                printf("POPS LF@%s\n", var_name);
+                return;
+            }
+        }
+        
+        // Nie je to getter - štandardné spracovanie
         char value_str[512];
         get_value_string(ast, value_str, sizeof(value_str));
         printf("MOVE LF@%s %s\n", var_name, value_str);
