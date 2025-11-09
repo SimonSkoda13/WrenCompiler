@@ -1,9 +1,10 @@
-/**
- * @file symtable.c
- * @brief Symbol table implementation using AVL tree
+/*
+ * Prekladač jazyka IFJ25
+ * VUT FIT
  *
- * @author Šimon Škoda
- * @date 2025-10-22
+ * Autori:
+ *   - Martin Michálik (xmicham00)
+ *   - Šimon Škoda (xskodas00)
  */
 
 #include "symtable.h"
@@ -279,6 +280,7 @@ void symtable_init(t_symtable *ifj_table)
 
   ifj_table->ifj_root = NULL;
   ifj_table->ifj_current_scope = 0;
+  ifj_table->ifj_current_nesting = 0;
 }
 
 void symtable_destroy(t_symtable *ifj_table)
@@ -344,14 +346,27 @@ bool symtable_insert_var(t_symtable *ifj_table, const char *ifj_key,
     return false;
   }
 
-  // Check if symbol already exists
-  if (symtable_search(ifj_table, ifj_key) != NULL)
+  // For local variables, create unique key with nesting level suffix
+  // This allows same variable name at different nesting levels (shadowing)
+  char unique_key[256];
+  if (ifj_type == SYM_VAR_LOCAL && ifj_table->ifj_current_nesting > 0)
   {
-    return false; // Symbol already exists
+    snprintf(unique_key, sizeof(unique_key), "%s$n%d", ifj_key, ifj_table->ifj_current_nesting);
+  }
+  else
+  {
+    // Parameters (nesting=0) and global variables use name as-is
+    snprintf(unique_key, sizeof(unique_key), "%s", ifj_key);
   }
 
-  // Insert using recursive helper
-  t_avl_node *ifj_new_root = insert_recursive(ifj_table->ifj_root, ifj_key, ifj_type);
+  // Check if this specific key already exists
+  if (symtable_search(ifj_table, unique_key) != NULL)
+  {
+    return false; // Symbol with this exact key already exists
+  }
+
+  // Insert using recursive helper with unique key
+  t_avl_node *ifj_new_root = insert_recursive(ifj_table->ifj_root, unique_key, ifj_type);
 
   if (ifj_new_root == NULL)
   {
@@ -361,11 +376,12 @@ bool symtable_insert_var(t_symtable *ifj_table, const char *ifj_key,
   ifj_table->ifj_root = ifj_new_root;
 
   // find the node we just inserted and set metadata
-  t_avl_node *ifj_inserted = symtable_search(ifj_table, ifj_key);
+  t_avl_node *ifj_inserted = symtable_search(ifj_table, unique_key);
   if (ifj_inserted != NULL)
   {
     ifj_inserted->ifj_data.ifj_var.ifj_type = ifj_data_type;
     ifj_inserted->ifj_data.ifj_var.ifj_scope_level = ifj_table->ifj_current_scope;
+    ifj_inserted->ifj_data.ifj_var.ifj_nesting_level = ifj_table->ifj_current_nesting;
   }
 
   return true;
@@ -701,4 +717,171 @@ int symtable_get_scope(t_symtable *ifj_table)
   }
 
   return ifj_table->ifj_current_scope;
+}
+
+void symtable_enter_nesting(t_symtable *ifj_table)
+{
+  if (ifj_table == NULL)
+  {
+    return;
+  }
+
+  ifj_table->ifj_current_nesting++;
+}
+
+// Helper to collect keys from specific nesting level
+static void collect_nesting_keys(t_avl_node *ifj_node, int ifj_scope, int ifj_nesting,
+                                  char **ifj_keys, int *ifj_count, int ifj_max)
+{
+  if (ifj_node == NULL || *ifj_count >= ifj_max)
+  {
+    return;
+  }
+
+  // traverse left
+  collect_nesting_keys(ifj_node->ifj_left, ifj_scope, ifj_nesting, ifj_keys, ifj_count, ifj_max);
+
+  // check if current node is from this scope and nesting level
+  if ((ifj_node->ifj_sym_type == SYM_VAR_LOCAL) &&
+      ifj_node->ifj_data.ifj_var.ifj_scope_level == ifj_scope &&
+      ifj_node->ifj_data.ifj_var.ifj_nesting_level == ifj_nesting)
+  {
+    // Copy the key string
+    ifj_keys[*ifj_count] = malloc(strlen(ifj_node->ifj_key) + 1);
+    if (ifj_keys[*ifj_count] != NULL) {
+      strcpy(ifj_keys[*ifj_count], ifj_node->ifj_key);
+      (*ifj_count)++;
+    }
+  }
+
+  // traverse right
+  collect_nesting_keys(ifj_node->ifj_right, ifj_scope, ifj_nesting, ifj_keys, ifj_count, ifj_max);
+}
+
+void symtable_exit_nesting(t_symtable *ifj_table)
+{
+  if (ifj_table == NULL || ifj_table->ifj_current_nesting == 0)
+  {
+    return;
+  }
+
+  int ifj_old_nesting = ifj_table->ifj_current_nesting;
+  int ifj_current_scope = ifj_table->ifj_current_scope;
+  ifj_table->ifj_current_nesting--;
+
+  // collect all keys from exiting nesting level
+  char *ifj_to_delete[1000];
+  int ifj_delete_count = 0;
+
+  collect_nesting_keys(ifj_table->ifj_root, ifj_current_scope, ifj_old_nesting,
+                       ifj_to_delete, &ifj_delete_count, 1000);
+
+  // delete collected keys
+  for (int ifj_i = 0; ifj_i < ifj_delete_count; ifj_i++)
+  {
+    symtable_delete(ifj_table, ifj_to_delete[ifj_i]);
+    free(ifj_to_delete[ifj_i]);
+  }
+}
+
+// Helper to check if key matches base name (with or without $nX suffix)
+static bool key_matches_base(const char *ifj_key, const char *ifj_base_key)
+{
+  size_t base_len = strlen(ifj_base_key);
+  
+  // Check if key starts with base_key
+  if (strncmp(ifj_key, ifj_base_key, base_len) != 0)
+  {
+    return false;
+  }
+  
+  // Key must be either exact match or have $nX suffix
+  if (ifj_key[base_len] == '\0' || strncmp(&ifj_key[base_len], "$n", 2) == 0)
+  {
+    return true;
+  }
+  
+  return false;
+}
+
+// Helper to find variable with highest nesting level
+// Now searches for all keys matching base name (e.g., "num1", "num1$n1", "num1$n2")
+static void find_highest_nesting_var(t_avl_node *ifj_node, const char *ifj_base_key,
+                                     t_avl_node **ifj_best, int *ifj_best_nesting)
+{
+  if (ifj_node == NULL)
+  {
+    return;
+  }
+
+  // Always search entire tree since variables can be at any position
+  find_highest_nesting_var(ifj_node->ifj_left, ifj_base_key, ifj_best, ifj_best_nesting);
+  
+  // Check if current node matches base key
+  if (ifj_node->ifj_sym_type == SYM_VAR_LOCAL && key_matches_base(ifj_node->ifj_key, ifj_base_key))
+  {
+    if (ifj_node->ifj_data.ifj_var.ifj_nesting_level > *ifj_best_nesting)
+    {
+      *ifj_best = ifj_node;
+      *ifj_best_nesting = ifj_node->ifj_data.ifj_var.ifj_nesting_level;
+    }
+  }
+  
+  find_highest_nesting_var(ifj_node->ifj_right, ifj_base_key, ifj_best, ifj_best_nesting);
+}
+
+t_avl_node *symtable_search_var_scoped(t_symtable *ifj_table, const char *ifj_key)
+{
+  if (ifj_table == NULL || ifj_key == NULL)
+  {
+    return NULL;
+  }
+
+  t_avl_node *ifj_best = NULL;
+  int ifj_best_nesting = -1;
+
+  find_highest_nesting_var(ifj_table->ifj_root, ifj_key, &ifj_best, &ifj_best_nesting);
+
+  return ifj_best;
+}
+
+// Helper to find variable at specific scope and nesting level
+static void find_var_at_nesting(t_avl_node *ifj_node, const char *ifj_base_key,
+                                 int ifj_scope, int ifj_nesting, t_avl_node **ifj_result)
+{
+  if (ifj_node == NULL || *ifj_result != NULL)
+  {
+    return;
+  }
+
+  // Search entire tree since keys now have $nX suffixes
+  find_var_at_nesting(ifj_node->ifj_left, ifj_base_key, ifj_scope, ifj_nesting, ifj_result);
+
+  // Check if this node's key matches the base name pattern
+  if (key_matches_base(ifj_node->ifj_key, ifj_base_key) &&
+      ifj_node->ifj_sym_type == SYM_VAR_LOCAL &&
+      ifj_node->ifj_data.ifj_var.ifj_scope_level == ifj_scope &&
+      ifj_node->ifj_data.ifj_var.ifj_nesting_level == ifj_nesting)
+  {
+    *ifj_result = ifj_node;
+    return;
+  }
+
+  find_var_at_nesting(ifj_node->ifj_right, ifj_base_key, ifj_scope, ifj_nesting, ifj_result);
+}
+
+t_avl_node *symtable_search_var_current_nesting(t_symtable *ifj_table, const char *ifj_key)
+{
+  if (ifj_table == NULL || ifj_key == NULL)
+  {
+    return NULL;
+  }
+
+  t_avl_node *ifj_result = NULL;
+  int ifj_scope = ifj_table->ifj_current_scope;
+  int ifj_nesting = ifj_table->ifj_current_nesting;
+
+  find_var_at_nesting(ifj_table->ifj_root, ifj_key, ifj_scope, ifj_nesting, &ifj_result);
+
+  return ifj_result;
 }

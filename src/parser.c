@@ -256,6 +256,9 @@ void func() {
         // Vstúpime do nového scope pre lokálne premenné gettera
         symtable_enter_scope(parser.symtable);
         
+        // Nastavíme nesting level na 0 (getter nemá parametre)
+        parser.symtable->ifj_current_nesting = 0;
+        
         putback_token(); 
         block();
         
@@ -303,7 +306,10 @@ void func() {
         // Vstúpime do nového scope pre lokálne premenné settera
         symtable_enter_scope(parser.symtable);
         
-        // Vložíme parameter settera do symboltabuľky ako lokálnu premennú
+        // Nastavíme nesting level na 0 pre parametre
+        parser.symtable->ifj_current_nesting = 0;
+        
+        // Vložíme parameter settera do symboltabuľky ako lokálnu premennú (nesting=0)
         bool param_success = symtable_insert_var(parser.symtable, param_name, 
                                                  SYM_VAR_LOCAL, TYPE_UNKNOWN);
         if (!param_success) {
@@ -355,7 +361,9 @@ void func() {
     
     bool success = symtable_insert_func(parser.symtable, mangled_name, 
                                        params.count, param_types, TYPE_UNKNOWN, SYM_FUNCTION);
-    if (param_types) free(param_types);
+    if (param_types) {
+        free(param_types);
+    }
     
     if (!success) {
         exit_with_error(ERR_INTERNAL, 
@@ -382,7 +390,10 @@ void func() {
         // Vstúpime do nového scope pre lokálne premenné funkcie
         symtable_enter_scope(parser.symtable);
         
-        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné
+        // Nastavíme nesting level na 0 pre parametre
+        parser.symtable->ifj_current_nesting = 0;
+        
+        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné (nesting=0)
         for (int i = 0; i < params.count; i++) {
             bool param_success = symtable_insert_var(parser.symtable, params.names[i], 
                                                      SYM_VAR_LOCAL, TYPE_UNKNOWN);
@@ -393,7 +404,7 @@ void func() {
             }
         }
         
-        block(); // function body
+        block();
         
         // Opustíme scope a vyčistíme lokálne premenné
         symtable_exit_scope(parser.symtable);
@@ -408,12 +419,15 @@ void func() {
         free(mangled_name);
     } else {
         // Pre ostatné funkcie generujeme priamo
-        generate_function_start(func_name, mangled_name, &params);  // false = nie getter
+        generate_function_start(func_name, mangled_name, &params);
         
         // Vstúpime do nového scope pre lokálne premenné funkcie
         symtable_enter_scope(parser.symtable);
         
-        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné
+        // Nastavíme nesting level na 0 pre parametre
+        parser.symtable->ifj_current_nesting = 0;
+        
+        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné (nesting=0)
         for (int i = 0; i < params.count; i++) {
             bool param_success = symtable_insert_var(parser.symtable, params.names[i], 
                                                      SYM_VAR_LOCAL, TYPE_UNKNOWN);
@@ -424,7 +438,7 @@ void func() {
             }
         }
         
-        block(); // function body
+        block();
         
         // Opustíme scope a vyčistíme lokálne premenné
         symtable_exit_scope(parser.symtable);
@@ -474,9 +488,17 @@ void param_list_tail(t_param_list *params) {
 }
 
 void block() {
-    consume_token(LEFT_BRACE); // '{'
-    consume_token(EOL); // consume EOL after '{'
+    consume_token(LEFT_BRACE);
+    consume_token(EOL); // '{ EOL'
+    
+    // Enter new nesting level
+    symtable_enter_nesting(parser.symtable);
+    
     statement_list();
+    
+    // Exit nesting level and clean up variables
+    symtable_exit_nesting(parser.symtable);
+    
     check_token(RIGHT_BRACE); // '}'
 }
 void statement_list() {
@@ -513,16 +535,17 @@ void statement() {
 }
 
 void var_decl() {
-    check_token(KEYWORD); // 'var'
-    consume_token(IDENTIFIER); // variable name
+    check_token(KEYWORD);
+    consume_token(IDENTIFIER); // var identifier
     
     // Získame meno premennej
     char *var_name = parser.current_token->value.string;
     
-    // Skontrolujeme či premenná už existuje v tabuľke symbolov
-    t_avl_node *existing = symtable_search(parser.symtable, var_name);
+    // Skontrolujeme či premenná už existuje NA AKTUÁLNOM NESTING LEVELI
+    // (povoľujeme shadowing - premenná môže existovať na inom nesting leveli)
+    t_avl_node *existing = symtable_search_var_current_nesting(parser.symtable, var_name);
     if (existing != NULL) {
-        // Premenná už existuje - sémantická chyba (redefinícia)
+        // Premenná už existuje na tomto nesting leveli - sémantická chyba (redefinícia)
         exit_with_error(ERR_SEM_REDEF, 
             "Semantic error: Variable '%s' already declared at line %d", 
             var_name, parser.scanner->line);
@@ -569,8 +592,8 @@ void assign() {
         } else if (parser.current_token->type == NUM_FLOAT || parser.current_token->type == NUM_EXP_FLOAT) {
             generate_push_float_literal(parser.current_token->value.number_float);
         } else if (parser.current_token->type == IDENTIFIER) {
-            // Skontrolujeme či premenná existuje
-            t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+            // Skontrolujeme či premenná existuje (hľadáme s najvyšším nesting levelom)
+            t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, parser.current_token->value.string);
             if (var_node == NULL) {
                 exit_with_error(ERR_SEM_UNDEF,
                     "Semantic error: Variable '%s' is not defined at line %d",
@@ -594,8 +617,8 @@ void assign() {
         return;
     }
     
-    // Nie je to setter - musí to byť premenná
-    t_avl_node *var_node = symtable_search(parser.symtable, identifier);
+    // Nie je to setter - musí to byť premenná (hľadáme s najvyšším nesting levelom)
+    t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, identifier);
     if (var_node == NULL) {
         exit_with_error(ERR_SEM_UNDEF, 
             "Semantic error: Variable '%s' is not defined at line %d", 
@@ -608,21 +631,21 @@ void assign() {
     
     t_ast_node *ast = NULL;
     
-    // Check if it's a function call or expression
+    // Kontrola či ide o volanie funkcie alebo výraz
     if (parser.current_token->type == KEYWORD && 
         parser.current_token->value.keyword == KW_IFJ) {
         // Built-in function call: Ifj.functionName(...)
         func_call();
         consume_token(EOL);
     } else if (parser.current_token->type == IDENTIFIER) {
-        // Could be func_call or expression - need lookahead
+        // Môže to byť volanie funkcie alebo výraz - potrebujeme lookahead
         t_token saved_identifier = *parser.current_token;
         next_token();
         
         if (parser.current_token->type == LEFT_PAREN) {
-            // It's a function call
+            // Volanie funkcie: identifier(...)
             putback_token(); // Put back '('
-            *parser.current_token = saved_identifier; // Restore identifier
+            *parser.current_token = saved_identifier;
             
             char *func_name = parser.current_token->value.string;
             
@@ -653,19 +676,19 @@ void assign() {
             
             consume_token(EOL);
         } else if (parser.current_token->type == EOL) {
-            // Simple identifier assignment: x = y
+            // x = y
             // Musíme predať EOL ako druhý token, aby precedenčný parser vedel, že výraz končí
             ast = expression(&saved_identifier, parser.current_token);
             generate_assignment(var_name, ast);
             return;
         } else {
-            // It's an expression starting with identifier
+            // výraz začínajúci identifikátorom x = y + ...
             ast = expression(&saved_identifier, parser.current_token);
             generate_assignment(var_name, ast);
             check_token(EOL);
         }
     } else {
-        // It's an expression (literal, parenthesized expr, etc.)
+        // x = 5 + ...
         ast = expression(parser.current_token, NULL);
         generate_assignment(var_name, ast);
         check_token(EOL);
@@ -735,14 +758,13 @@ void func_call() {
             } else if (parser.current_token->type == NUM_INT || parser.current_token->type == NUM_EXP_INT) {
                 builtin_write_integer_literal(parser.current_token->value.number_int);
             } else if (parser.current_token->type == IDENTIFIER) { 
-                //check symtable if exists throw error if not
-                t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+                //hľadáme s najvyšším nesting levelom
+                t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, parser.current_token->value.string);
                 if (var_node == NULL) {
                     exit_with_error(ERR_SEM_UNDEF,
                         "Semantic error: Variable '%s' is not defined at line %d",
                         parser.current_token->value.string, parser.scanner->line);
                 }
-                //if exists call builtin_write_var that will call correct write with varible
                 builtin_write_var(parser.current_token->value.string);
 
             } else {
@@ -808,7 +830,7 @@ int arg_list() {
         return 0;
     }
     
-    // Prvý argument - môže byť len literál alebo identifikátor (nie výraz)
+    // argument - môže byť len literál alebo identifikátor (nie výraz)
     if (parser.current_token->type == STRING_LITERAL) {
         generate_push_string_literal(parser.current_token->value.string);
     } else if (parser.current_token->type == NUM_INT || parser.current_token->type == NUM_EXP_INT) {
@@ -816,8 +838,8 @@ int arg_list() {
     } else if (parser.current_token->type == NUM_FLOAT || parser.current_token->type == NUM_EXP_FLOAT) {
         generate_push_float_literal(parser.current_token->value.number_float);
     } else if (parser.current_token->type == IDENTIFIER) {
-        // Skontrolujeme či premenná existuje
-        t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+        // Skontrolujeme či premenná existuje (hľadáme s najvyšším nesting levelom)
+        t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, parser.current_token->value.string);
         if (var_node == NULL) {
             exit_with_error(ERR_SEM_UNDEF,
                 "Semantic error: Variable '%s' is not defined at line %d",
@@ -852,8 +874,8 @@ int arg_list_tail() {
         } else if (parser.current_token->type == NUM_FLOAT || parser.current_token->type == NUM_EXP_FLOAT) {
             generate_push_float_literal(parser.current_token->value.number_float);
         } else if (parser.current_token->type == IDENTIFIER) {
-            // Skontrolujeme či premenná existuje
-            t_avl_node *var_node = symtable_search(parser.symtable, parser.current_token->value.string);
+            // Skontrolujeme či premenná existuje (hľadáme s najvyšším nesting levelom)
+            t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, parser.current_token->value.string);
             if (var_node == NULL) {
                 exit_with_error(ERR_SEM_UNDEF,
                     "Semantic error: Variable '%s' is not defined at line %d",
@@ -895,7 +917,7 @@ t_ast_node* expression(t_token *token1, t_token *token2) {
 
 void expression_continue() {
     if (parser.current_token->type == EOL || parser.current_token->type == COMMA) {
-        return; //If term was function call ending with EOL
+        return;
     }
     
     next_token();
@@ -904,7 +926,7 @@ void expression_continue() {
         term();
         expression_continue();
     } else {
-        // Epsilon production, do nothing
+        //epsilon
         return;
     }
 }
@@ -916,21 +938,19 @@ void term() {
     }
     
     if (parser.current_token->type == IDENTIFIER) {
-        // Save the identifier token
+        // Uložíme token identifikátora
         t_token saved_identifier = *parser.current_token;
         
-        // Look ahead to check if it's a function call
+        // Look ahead aby sme zistili, či je to volanie funkcie
         next_token();
         if (parser.current_token->type == LEFT_PAREN) {
-            // It's a function call - restore identifier and parse as func_call
-            putback_token(); // Put back the '('
-            *parser.current_token = saved_identifier; // Restore identifier
+            // Volanie funkcie: identifier(...)
+            putback_token(); // Put back '('
+            *parser.current_token = saved_identifier;
             func_call();
         } else {
-            // Just an identifier - put back the lookahead token
+            // identifier - put back the lookahead token
             putback_token();
-            // The identifier is already in current_token (saved_identifier)
-            // Just treat it as a term (variable reference)
         }
         return;
     }

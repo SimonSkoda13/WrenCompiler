@@ -132,6 +132,20 @@ char* mangle_setter_name(const char *setter_name) {
     return mangled;
 }
 
+// Generate unique variable name with nesting level
+// Returns pointer to static buffer - not thread safe but OK for single-threaded compiler
+static const char *get_var_name_with_nesting(const char *var_name, int nesting_level) {
+    static char buffer[256];
+    if (nesting_level == 0) {
+        // Parameters have no suffix
+        snprintf(buffer, sizeof(buffer), "%s", var_name);
+    } else {
+        // Nested variables get suffix with nesting level
+        snprintf(buffer, sizeof(buffer), "%s$n%d", var_name, nesting_level);
+    }
+    return buffer;
+}
+
 void generate_header() {
     printf(".IFJcode25\n");
     printf("JUMP $$main\n");
@@ -156,11 +170,20 @@ void builtin_write_integer_literal(long long number) {
 }
 
 void builtin_write_var(char *var_id) {
-    printf("WRITE LF@%s\n", var_id);
+    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_id);
+    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL) {
+        int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
+        const char *unique_name = get_var_name_with_nesting(var_id, nesting);
+        printf("WRITE LF@%s\n", unique_name);
+    }
+    //TODO: handle global variable case
 }
 
 void generate_var_declaration(const char *var_name) {
-    printf("DEFVAR LF@%s\n", var_name);
+    // Get nesting level from global symtable
+    int nesting = global_symtable->ifj_current_nesting;
+    const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+    printf("DEFVAR LF@%s\n", unique_name);
 }
 
 void generate_function_start(const char *func_name, const char *mangled_name, t_param_list *params) {
@@ -253,7 +276,16 @@ void generate_push_float_literal(double value) {
 }
 
 void generate_push_variable(const char *var_name) {
-    printf("PUSHS LF@%s\n", var_name);
+    // Nájdeme premennú s najvyšším nesting levelom
+    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
+    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL) {
+        int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
+        const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+        printf("PUSHS LF@%s\n", unique_name);
+    } else {
+        // Global variable or parameter - use as is
+        printf("PUSHS LF@%s\n", var_name);
+    }
 }
 
 void generate_push_null() {
@@ -290,8 +322,16 @@ void generate_setter_call(const char *setter_name) {
 
 void generate_move_retval_to_var(const char *var_name) {
     // Po návrate z funkcie je návratová hodnota na zásobníku
-    // Popneme ju do lokálnej premennej
-    printf("POPS LF@%s\n", var_name);
+    // Nájdeme premennú s najvyšším nesting levelom
+    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
+    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL) {
+        int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
+        const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+        printf("POPS LF@%s\n", unique_name);
+    } else {
+        // Global variable or parameter - use as is
+        printf("POPS LF@%s\n", var_name);
+    }
 }
 
 // Pomocná premenná pre generovanie dočasných premenných
@@ -360,9 +400,19 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size) {
             break;
         }
         case IDENTIFIER:
-        case GLOBAL_VAR:
-            snprintf(result, result_size, "LF@%s", node->token->value.string);
+        case GLOBAL_VAR: {
+            // Nájdeme premennú s najvyšším nesting levelom
+            t_avl_node *var_node = symtable_search_var_scoped(global_symtable, node->token->value.string);
+            if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL) {
+                int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
+                const char *unique_name = get_var_name_with_nesting(node->token->value.string, nesting);
+                snprintf(result, result_size, "LF@%s", unique_name);
+            } else {
+                // Global variable or not found - use as is
+                snprintf(result, result_size, "LF@%s", node->token->value.string);
+            }
             break;
+        }
         default:
             result[0] = '\0';
             break;
@@ -484,6 +534,15 @@ void generate_assignment(const char *var_name, t_ast_node *ast) {
         exit_with_error(ERR_INTERNAL, "Internal error: NULL AST in generate_assignment");
     }
     
+    // Nájdeme premennú s najvyšším nesting levelom
+    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
+    if (var_node == NULL) {
+        exit_with_error(ERR_INTERNAL, "Internal error: Variable '%s' not found in symbol table", var_name);
+    }
+    
+    int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
+    const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+    
     // Ak je to jednoduchý literál alebo premenná, priamo priradíme
     if (ast->left == NULL && ast->right == NULL) {
         // Skontrolujeme či to nie je getter
@@ -491,7 +550,7 @@ void generate_assignment(const char *var_name, t_ast_node *ast) {
             if (generate_getter_call_if_needed(ast->token->value.string, global_symtable)) {
                 // Je to getter - zavolali sme ho, výsledok je na zásobníku
                 // Popneme ho do cieľovej premennej
-                printf("POPS LF@%s\n", var_name);
+                printf("POPS LF@%s\n", unique_name);
                 return;
             }
         }
@@ -499,7 +558,7 @@ void generate_assignment(const char *var_name, t_ast_node *ast) {
         // Nie je to getter - štandardné spracovanie
         char value_str[512];
         get_value_string(ast, value_str, sizeof(value_str));
-        printf("MOVE LF@%s %s\n", var_name, value_str);
+        printf("MOVE LF@%s %s\n", unique_name, value_str);
     } else {
         // Komplexný výraz - použijeme generate_expression_code
         char result_var[256];
@@ -508,6 +567,6 @@ void generate_assignment(const char *var_name, t_ast_node *ast) {
             exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate expression code");
         }
         // Presunieme výsledok do cieľovej premennej
-        printf("MOVE LF@%s %s\n", var_name, result_var);
+        printf("MOVE LF@%s %s\n", unique_name, result_var);
     }
 }

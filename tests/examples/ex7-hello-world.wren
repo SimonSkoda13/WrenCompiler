@@ -15,6 +15,23 @@ class Program {
         Ifj.write("function add2:\n")
         var hash
         hash = 17 * 31
+        {
+            var num1
+            num1 = 69
+            Ifj.write("Teraz by malo vypisat 69\n")
+            Ifj.write(num1)
+            Ifj.write("\n")
+            {
+                var num1
+                num1 = 11
+                Ifj.write("Teraz by malo vypisat 11\n")
+                Ifj.write(num1)
+                Ifj.write("\n")
+            }
+        }
+        Ifj.write("Teraz by malo vypisat parameter\n")
+        Ifj.write(num1)
+        Ifj.write("\n")
         return (num1 + num2) * hash
     }
 
@@ -33,13 +50,9 @@ class Program {
 
     // hlavni funkce main
     static main() {
-        var myStr
-        myStr = unicorn
         var added
         added = add(1)
         added = add(2,8)
-        //added = add(1,2,3)
-        Ifj.write(myStr)
         Ifj.write("\n")
         Ifj.write(added)
     }

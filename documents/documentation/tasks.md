@@ -7,7 +7,7 @@
 - ~~Parse prolog and class skeleton~~
 - ~~Parse function definitions (static functions, getters, setters)~~
 - ~~Parse statements: `var`, `if-else`, `while`, `return`, assignment, function calls~~
-- Handle blocks and scoping
+- ~~Handle blocks and scoping~~
 - ~~Verify main() function exists~~
 
 ## Task 2: Expression Parser (Precedence Analysis)
@@ -24,9 +24,10 @@
 
 ## Task: Generovanie uživateľom vytvorených funkcii
 
-- Generácia uživateľských funkcii
-- Volanie funkcii
-- Preťažovanie funkcii
+- ~~Generácia uživateľských funkcii~~
+- ~~Volanie funkcii~~
+- ~~Preťažovanie funkcii~~
+- ~~Bloky~~
 
 ---
 
@@ -137,9 +138,10 @@
 - Tu bude treba tabuľku symbolov
 - Treba v parseri aj zisťovať akého typu sú premenné
 - Proste ak budem mať niečo ako `foo = 2 + bar` tak musím dať pozor aby `bar` bol typu `Num`
-- Tiež zisťovať použitie nedeklarovanej funkcie alebo premennej
+- Tiež zisťovať použitie nedeklarovanej funkcie alebo premennej. S funkciami to bude trochu náročenjšie keďže sa môžu nachádzať
+  hocikde a môže sa volať funkcia ktorá je deklarovaná až ďalej v kóde
 - Treba dávať pozor aj na nesprávne volania funkcii (nesprávny počet prametrov alebo typ)
-- Kontrolovať redeklarácie
+- [x] Kontrolovať redeklarácie
 - Asi samostatná symtable pre globálne premenné ostatné musia byť podľa scope
 - Treba pozrieť zadanie a prejsť si veci ktoré je treba detekovať semantickou analýzov (redekláracie, zlý počet parametrov, atď.)
 - Tiež treba trochu upraviť a vyčistiť vracanie error kódov. Zatiaľ som to nekontroloval takže vraciam error kódy ako mi ich
@@ -152,16 +154,16 @@
 - Bude to jebačka lebo stack frames a podobné srandy
 - Keď mám AST k výrazu tak viem vygenerovať správne inštrukcie v IFJcode25 tak aby hodnota výrazu bola správna
 - V `parser.c` doplniť funkcie rekurzívneho zostupu o generovanie kódu (po tom čo ostané kontroly prebehnú v poriadku)
-- Zatiaľ je len veľmi hrubá implementácia ktorá umožňuje generovanie kódu pre jednoduché programy typu Hello World!
-- Generovanie funkcií nie je hotové zatiaľ sa vieme generovať len builtin funkciu Ifj.write a main funkciu (špecialny prípad)
-- Treba urobiť generovanie uživateľom deklarovaných funkcií. Pri tomto treba myslieť na preťažovanie takže funkcia myFunc(param1)
-  a myFunc(param1, param2) sú dve úplne rozdielne funkcie
-- Statické gettery a settery nemám analyzované taKźe neviem povedať či tam bude nejkaký väčší ojeb alebo to bude zase len špecialny
-  prípad funkcie
+- ~~Zatiaľ je len veľmi hrubá implementácia ktorá umožňuje generovanie kódu pre jednoduché programy typu Hello World!~~
+- ~~Generovanie funkcií nie je hotové zatiaľ sa vieme generovať len builtin funkciu Ifj.write a main funkciu (špecialny prípad)~~
+- [x] Treba urobiť generovanie uživateľom deklarovaných funkcií. Pri tomto treba myslieť na preťažovanie takže funkcia myFunc(param1)
+      a myFunc(param1, param2) sú dve úplne rozdielne funkcie
+- [x] Statické gettery a settery nemám analyzované takže neviem povedať či tam bude nejkaký väčší ojeb alebo to bude zase len špecialny
+      prípad funkcie
 - Globálne premenné nie sú vyriešené. Pri tomto to odhadujem na dve tabuľky symbolov (globálnu a lokálnu) a globálne premenné
   riešiť v tej globálnej tabuľke
-- Bloky. Je to vysvetlené v democivku aký tu nastáva problém. Takže bude treba urobiť name-mangling pri vkladaní do tabuľky symbolov
-  a potom získať aj správnu premennú z tabuľky podľa zanorenia
+- [x] Bloky. Je to vysvetlené v democivku aký tu nastáva problém. Takže bude treba urobiť name-mangling pri vkladaní do tabuľky symbolov
+      a potom získať aj správnu premennú z tabuľky podľa zanorenia
 - Built-in funkcie. Tá funkcia Ifj.write je len jeden z pár špeciálnych prípadov kedy sa to dá riešiť takto. Bude treba podporovať
   aj iné builtin funkcie ktoré si však budeme musieť vygenerovať sami
 - Vyriešiť generáciu kodú pre operácie s reťazcami (+ \*)
