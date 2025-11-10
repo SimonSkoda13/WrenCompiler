@@ -8,20 +8,20 @@ class Program {
         x = 5
         
         if (x > 0) {
-            var dm
-            dm = Ifj.write("positive\n")
+            var dm1
+            dm1 = Ifj.write("positive\n")
         } else {
-            var dm
-            dm = Ifj.write("negative\n")
+            var dm2
+            dm2 = Ifj.write("negative\n")
         }
         
         // Test 2: While loop countdown
         var count
         count = 3
         while (count > 0) {
-            var dm
-            dm = Ifj.write(count)
-            dm = Ifj.write("\n")
+            var dm3
+            dm3 = Ifj.write(count)
+            dm3 = Ifj.write("\n")
             count = count - 1
         }
         
@@ -29,11 +29,11 @@ class Program {
         var y
         y = null
         if (y != null) {
-            var dm
-            dm = Ifj.write("not null\n")
+            var dm4
+            dm4 = Ifj.write("not null\n")
         } else {
-            var dm
-            dm = Ifj.write("is null\n")
+            var dm5
+            dm5 = Ifj.write("is null\n")
         }
     }
 }

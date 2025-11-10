@@ -15,6 +15,9 @@ static t_symtable *global_symtable = NULL;
 // Počítadlo pre unikátne labely pre if/while konštrukcie
 static int ifj_label_counter = 0;
 
+// Sada už definovaných temp premenných (aby sme ich nedefinovali dvakrát v while loope)
+static bool temp_vars_defined[1000] = {false}; // podporíme až 1000 temp vars
+
 void generator_set_symtable(t_symtable *ifj_symtable)
 {
     global_symtable = ifj_symtable;
@@ -263,6 +266,15 @@ void generate_function_start(const char *func_name, const char *mangled_name, t_
     printf("CREATEFRAME\n");
     printf("PUSHFRAME\n");
 
+    // Preddeklarujeme globálne temp premenné (pre while/if výrazy)
+    // (aby sme ich nemuseli deklarovať vo vnútri while loopu)
+    printf("# Temp variables for expressions\n");
+    for (int i = 0; i < 50; i++)
+    {
+        printf("DEFVAR LF@__tmp%d\n", i);
+    }
+    printf("\n");
+
     // Najprv definujeme všetky premenné pre parametre
     for (int i = 0; i < params->count; i++)
     {
@@ -509,6 +521,17 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
         }
         break;
     }
+    case KEYWORD:
+        // Handle null literal
+        if (node->token->value.keyword == KW_NULL_INST || node->token->value.keyword == KW_NULL_TYPE)
+        {
+            snprintf(result, result_size, "nil@nil");
+        }
+        else
+        {
+            result[0] = '\0';
+        }
+        break;
     case IDENTIFIER:
     case GLOBAL_VAR:
     {
@@ -553,7 +576,9 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
                 // Musíme ho popnúť do dočasnej premennej
                 int tmp_num = get_next_temp_var();
                 snprintf(result_var, result_var_size, "LF@__tmp%d", tmp_num);
-                printf("DEFVAR %s\n", result_var);
+
+                // DEFVAR už je globálne preddeklarovaný
+
                 printf("POPS %s\n", result_var);
                 return 0;
             }
@@ -579,7 +604,9 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
             int temp_num = get_next_temp_var();
             char temp_name[256];
             snprintf(temp_name, sizeof(temp_name), "LF@__tmp%d", temp_num);
-            printf("DEFVAR %s\n", temp_name);
+
+            // DEFVAR už je globálne preddeklarovaný
+
             printf("MOVE %s %s\n", temp_name, left_var);
             strncpy(left_var, temp_name, sizeof(left_var) - 1);
         }
@@ -596,7 +623,9 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
             int temp_num = get_next_temp_var();
             char temp_name[256];
             snprintf(temp_name, sizeof(temp_name), "LF@__tmp%d", temp_num);
-            printf("DEFVAR %s\n", temp_name);
+
+            // DEFVAR už je globálne preddeklarovaný
+
             printf("MOVE %s %s\n", temp_name, right_var);
             strncpy(right_var, temp_name, sizeof(right_var) - 1);
         }
@@ -605,7 +634,8 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     // Vytvoríme premennú pre výsledok tejto operácie
     int result_temp_num = get_next_temp_var();
     snprintf(result_var, result_var_size, "LF@__tmp%d", result_temp_num);
-    printf("DEFVAR %s\n", result_var);
+
+    // DEFVAR už je globálne preddeklarovaný v parse_program(), takže ho skipneme
 
     // Vygenerujeme inštrukciu podľa typu operátora
     switch (node->token->type)
@@ -720,16 +750,16 @@ void generate_if_start(t_ast_node *condition_ast, int label_id)
     }
 
     // Uložíme výsledok podmienky do temporary premennej
-    printf("DEFVAR TF@%%if_cond_%d\n", label_id);
-    printf("MOVE TF@%%if_cond_%d %s\n", label_id, result_var);
+    printf("DEFVAR LF@%%if_cond_%d\n", label_id);
+    printf("MOVE LF@%%if_cond_%d %s\n", label_id, result_var);
 
     // Kontrola pravdivosti podľa zadania:
     // - null = false -> skok na else
     // - bool@false = false -> skok na else
     // - všetko ostatné = true -> pokračujeme do then vetvy
 
-    printf("JUMPIFEQ $$if_else_%d TF@%%if_cond_%d nil@nil\n", label_id, label_id);
-    printf("JUMPIFEQ $$if_else_%d TF@%%if_cond_%d bool@false\n", label_id, label_id);
+    printf("JUMPIFEQ $$if_else_%d LF@%%if_cond_%d nil@nil\n", label_id, label_id);
+    printf("JUMPIFEQ $$if_else_%d LF@%%if_cond_%d bool@false\n", label_id, label_id);
 
     // Ak podmienka je true, pokračujeme do then bloku (LABEL nasleduje)
 }
@@ -792,13 +822,12 @@ void generate_while_condition(t_ast_node *condition_ast, int label_id)
         exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate while condition");
     }
 
-    // Uložíme výsledok podmienky
-    printf("DEFVAR TF@%%while_cond_%d\n", label_id);
-    printf("MOVE TF@%%while_cond_%d %s\n", label_id, result_var);
+    // Uložíme výsledok podmienky (DEFVAR už je urobený v parseri)
+    printf("MOVE LF@%%while_cond_%d %s\n", label_id, result_var);
 
     // Kontrola pravdivosti - ak je false alebo null, opustime cyklus
-    printf("JUMPIFEQ $$while_end_%d TF@%%while_cond_%d nil@nil\n", label_id, label_id);
-    printf("JUMPIFEQ $$while_end_%d TF@%%while_cond_%d bool@false\n", label_id, label_id);
+    printf("JUMPIFEQ $$while_end_%d LF@%%while_cond_%d nil@nil\n", label_id, label_id);
+    printf("JUMPIFEQ $$while_end_%d LF@%%while_cond_%d bool@false\n", label_id, label_id);
 
     // Ak podmienka je true, pokračujeme do tela cyklu (kód nasleduje)
 }

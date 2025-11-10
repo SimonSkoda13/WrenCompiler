@@ -13,6 +13,12 @@
 FILE *main_output_buffer = NULL;
 bool is_generating_main = false;
 
+// Tracking variables declared inside loops (for predeclaration)
+#define MAX_LOOP_VARS 100
+static char *loop_vars[MAX_LOOP_VARS];
+static int loop_vars_count = 0;
+static bool collecting_loop_vars = false;
+
 // DEBUG
 void ast_print_tree(t_ast_node *node, int depth)
 {
@@ -663,8 +669,28 @@ void var_decl()
                         var_name, parser.scanner->line);
     }
 
-    // Vygenerujeme kód pre deklaráciu premennej
-    generate_var_declaration(var_name);
+    // If we're collecting loop variables, add to list and skip DEFVAR
+    if (collecting_loop_vars)
+    {
+        if (loop_vars_count < MAX_LOOP_VARS)
+        {
+            // Store the FULL variable name with nesting suffix
+            int nesting = parser.symtable->ifj_current_nesting;
+            const char *full_name = get_var_name_with_nesting(var_name, nesting);
+            loop_vars[loop_vars_count++] = strdup(full_name);
+        }
+        else
+        {
+            exit_with_error(ERR_INTERNAL,
+                            "Internal error: Too many variables in loop at line %d",
+                            parser.scanner->line);
+        }
+    }
+    else
+    {
+        // Vygenerujeme kód pre deklaráciu premennej (only if not in loop)
+        generate_var_declaration(var_name);
+    }
 
     consume_token(EOL);
 }
@@ -1042,26 +1068,86 @@ void while_statement()
     // Získame unikátne ID pre labely
     int label_id = get_next_label_id();
 
-    // Label pre začiatok cyklu
-    generate_while_start(label_id);
-
     consume_token(LEFT_PAREN); // '('
 
     // Získame AST podmienky
     t_ast_node *condition_ast = expression(parser.current_token, NULL);
 
-    // Generujeme vyhodnotenie podmienky
-    generate_while_condition(condition_ast, label_id);
-
     putback_token(); // Putback { after expression
 
-    // Telo cyklu
-    block(); // Parser vygeneruje kód tela cyklu
+    // Start collecting variable declarations from loop body
+    loop_vars_count = 0;
+    collecting_loop_vars = true;
+
+    // Save current stdout to restore later
+    FILE *saved_stdout = stdout;
+    FILE *temp_buffer = tmpfile();
+    if (temp_buffer == NULL)
+    {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to create temporary buffer");
+    }
+    stdout = temp_buffer;
+
+    // DON'T enter new nesting level yet - we want to collect vars at current nesting
+    // Enter new nesting level
+    symtable_enter_nesting(parser.symtable);
+
+    // Parse the block (redirected to temp buffer, collecting var names)
+    consume_token(LEFT_BRACE);
+    consume_token(EOL);
+    statement_list();
+    check_token(RIGHT_BRACE);
+
+    // Exit nesting level
+    symtable_exit_nesting(parser.symtable);
+
+    // Get the generated code from buffer
+    fseek(temp_buffer, 0, SEEK_END);
+    long buffer_size = ftell(temp_buffer);
+    fseek(temp_buffer, 0, SEEK_SET);
+    char *loop_body_code = malloc(buffer_size + 1);
+    if (loop_body_code == NULL)
+    {
+        exit_with_error(ERR_INTERNAL, "Internal error: Memory allocation failed");
+    }
+    fread(loop_body_code, 1, buffer_size, temp_buffer);
+    loop_body_code[buffer_size] = '\0';
+    fclose(temp_buffer);
+
+    // Restore stdout
+    stdout = saved_stdout;
+    collecting_loop_vars = false;
+
+    // Preddeklarujeme všetky premenné (condition + collected vars)
+    fprintf(stdout, "# While loop %d - predeclaration\n", label_id);
+    fprintf(stdout, "DEFVAR LF@%%while_cond_%d\n", label_id);
+
+    // Predeclare all collected loop variables (with full names including nesting)
+    for (int i = 0; i < loop_vars_count; i++)
+    {
+        fprintf(stdout, "DEFVAR LF@%s\n", loop_vars[i]);
+    }
+
+    // Label pre začiatok cyklu
+    generate_while_start(label_id);
+
+    // Generujeme vyhodnotenie podmienky (už bez DEFVAR pre while_cond)
+    generate_while_condition(condition_ast, label_id);
+
+    // Output the collected loop body code (without DEFVARs for local vars)
+    fprintf(stdout, "%s", loop_body_code);
+    free(loop_body_code);
 
     // Koniec cyklu (skok späť na začiatok)
     generate_while_end(label_id);
-}
 
+    // Clean up collected variable names
+    for (int i = 0; i < loop_vars_count; i++)
+    {
+        free(loop_vars[i]);
+    }
+    loop_vars_count = 0;
+}
 void return_statement()
 {
     check_token(KEYWORD); // 'return'
@@ -1478,12 +1564,11 @@ void parse_program()
 {
     prolog();
     generate_header();
+
     program();
     next_token();
     eols();
-    consume_token(END_OF_FILE);
-
-    // Skontrolujeme, či existuje funkcia main
+    consume_token(END_OF_FILE); // Skontrolujeme, či existuje funkcia main
     t_avl_node *main_func = symtable_search(parser.symtable, "main");
     if (main_func == NULL)
     {
