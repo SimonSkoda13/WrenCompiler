@@ -832,7 +832,17 @@ void assign()
         snprintf(result_var, sizeof(result_var), "LF@%s", result_var_name);
 
         // Generate code based on built-in function type
-        if (strcmp(builtin_name, "read_str") == 0)
+        if (strcmp(builtin_name, "write") == 0)
+        {
+            // write returns null, but we need to call it and store null in result
+            next_token();
+            t_ast_node *param = parse_builtin_param();
+            generate_builtin_write(param);
+            // Store null as the result (write returns null)
+            fprintf(stdout, "MOVE %s nil@nil\n", result_var);
+            consume_token(RIGHT_PAREN);
+        }
+        else if (strcmp(builtin_name, "read_str") == 0)
         {
             generate_builtin_read_str(result_var);
             consume_token(RIGHT_PAREN);
@@ -988,16 +998,37 @@ void if_statement()
         exit_with_error(ERR_SYNTAX, "Syntax error: Expected 'if' keyword at line %d", parser.scanner->line);
     }
 
-    consume_token(LEFT_PAREN);                    // '('
-    (void)expression(parser.current_token, NULL); // Zatiaľ ignorujeme AST
-    putback_token();                              // Putback { after expression
-    block();
+    // Získame unikátne ID pre labely
+    int label_id = get_next_label_id();
+
+    consume_token(LEFT_PAREN); // '('
+
+    // Získame AST podmienky
+    t_ast_node *condition_ast = expression(parser.current_token, NULL);
+
+    // Generujeme vyhodnotenie podmienky a skoky
+    generate_if_start(condition_ast, label_id);
+
+    putback_token(); // Putback { after expression
+
+    // Then blok
+    generate_if_then(label_id);
+    block(); // Parser vygeneruje kód then bloku
+
+    // Prechod na else
     consume_token(KEYWORD); // 'else'
     if (parser.current_token->value.keyword != KW_ELSE)
     {
         exit_with_error(ERR_SYNTAX, "Syntax error: Expected 'else' keyword at line %d", parser.scanner->line);
     }
-    block();
+
+    generate_if_else_start(label_id);
+
+    // Else blok
+    block(); // Parser vygeneruje kód else bloku
+
+    // Koniec if-else
+    generate_if_end(label_id);
 }
 
 void while_statement()
@@ -1005,14 +1036,30 @@ void while_statement()
     check_token(KEYWORD); // 'while'
     if (parser.current_token->value.keyword != KW_WHILE)
     {
-        fprintf(stderr, "Syntax error: Expected 'while' keyword\n");
-        // Error handling
+        exit_with_error(ERR_SYNTAX, "Syntax error: Expected 'while' keyword at line %d", parser.scanner->line);
     }
 
-    consume_token(LEFT_PAREN);                    // '('
-    (void)expression(parser.current_token, NULL); // Zatiaľ ignorujeme AST
-    putback_token();                              // Putback { after expression
-    block();
+    // Získame unikátne ID pre labely
+    int label_id = get_next_label_id();
+
+    // Label pre začiatok cyklu
+    generate_while_start(label_id);
+
+    consume_token(LEFT_PAREN); // '('
+
+    // Získame AST podmienky
+    t_ast_node *condition_ast = expression(parser.current_token, NULL);
+
+    // Generujeme vyhodnotenie podmienky
+    generate_while_condition(condition_ast, label_id);
+
+    putback_token(); // Putback { after expression
+
+    // Telo cyklu
+    block(); // Parser vygeneruje kód tela cyklu
+
+    // Koniec cyklu (skok späť na začiatok)
+    generate_while_end(label_id);
 }
 
 void return_statement()

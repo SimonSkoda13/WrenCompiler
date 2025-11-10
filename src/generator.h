@@ -209,4 +209,54 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size);
  */
 int generate_expression_code(t_ast_node *node, char *result_var, size_t result_var_size);
 
+/**
+ * @brief Získa ďalšie unikátne ID pre label
+ * @return Unikátne číslo pre label
+ */
+int get_next_label_id(void);
+
+/**
+ * @brief Generuje začiatok if-else konštrukcie (vyhodnotenie podmienky)
+ * @param condition_ast AST uzol s podmienkou
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_start(t_ast_node *condition_ast, int label_id);
+
+/**
+ * @brief Generuje label pre then vetvu (prázdna funkcia - flow continues)
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_then(int label_id);
+
+/**
+ * @brief Generuje prechod medzi then a else vetvou
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_else_start(int label_id);
+
+/**
+ * @brief Generuje koniec if-else konštrukcie
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_end(int label_id);
+
+/**
+ * @brief Generuje začiatok while cyklu
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_while_start(int label_id);
+
+/**
+ * @brief Generuje vyhodnotenie podmienky while cyklu
+ * @param condition_ast AST uzol s podmienkou
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_while_condition(t_ast_node *condition_ast, int label_id);
+
+/**
+ * @brief Generuje koniec while cyklu
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_while_end(int label_id);
+
 #endif // WRENCOMPILER_GENERATOR_H

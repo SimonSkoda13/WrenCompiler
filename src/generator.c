@@ -12,6 +12,9 @@
 // Globálna premenná pre prístup k tabuľke symbolov pri generovaní kódu
 static t_symtable *global_symtable = NULL;
 
+// Počítadlo pre unikátne labely pre if/while konštrukcie
+static int ifj_label_counter = 0;
+
 void generator_set_symtable(t_symtable *ifj_symtable)
 {
     global_symtable = ifj_symtable;
@@ -20,6 +23,11 @@ void generator_set_symtable(t_symtable *ifj_symtable)
 t_symtable *get_global_symtable()
 {
     return global_symtable;
+}
+
+int get_next_label_id()
+{
+    return ifj_label_counter++;
 }
 
 int must_escape(unsigned char c)
@@ -694,4 +702,116 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
         // Presunieme výsledok do cieľovej premennej
         printf("MOVE LF@%s %s\n", unique_name, result_var);
     }
+}
+
+/**
+ * @brief Generuje začiatok if-else konštrukcie (vyhodnotenie podmienky)
+ * @param condition_ast AST uzol s podmienkou
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_start(t_ast_node *condition_ast, int label_id)
+{
+    // Generujeme kód pre vyhodnotenie podmienky
+    char result_var[256];
+    int err = generate_expression_code(condition_ast, result_var, sizeof(result_var));
+    if (err)
+    {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate condition expression");
+    }
+
+    // Uložíme výsledok podmienky do temporary premennej
+    printf("DEFVAR TF@%%if_cond_%d\n", label_id);
+    printf("MOVE TF@%%if_cond_%d %s\n", label_id, result_var);
+
+    // Kontrola pravdivosti podľa zadania:
+    // - null = false -> skok na else
+    // - bool@false = false -> skok na else
+    // - všetko ostatné = true -> pokračujeme do then vetvy
+
+    printf("JUMPIFEQ $$if_else_%d TF@%%if_cond_%d nil@nil\n", label_id, label_id);
+    printf("JUMPIFEQ $$if_else_%d TF@%%if_cond_%d bool@false\n", label_id, label_id);
+
+    // Ak podmienka je true, pokračujeme do then bloku (LABEL nasleduje)
+}
+
+/**
+ * @brief Generuje label pre then vetvu
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_then(int label_id)
+{
+    // Then blok začína tu (kód then bloku bude vygenerovaný parserom)
+    // Na konci then bloku musíme preskočiť else vetvu
+    (void)label_id; // Then blok je default flow, nepotrebujeme label
+}
+
+/**
+ * @brief Generuje prechod medzi then a else vetvou
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_else_start(int label_id)
+{
+    // Skočíme na koniec (preskočíme else vetvu)
+    printf("JUMP $$if_end_%d\n", label_id);
+
+    // Label pre else vetvu
+    printf("LABEL $$if_else_%d\n", label_id);
+}
+
+/**
+ * @brief Generuje koniec if-else konštrukcie
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_if_end(int label_id)
+{
+    printf("LABEL $$if_end_%d\n", label_id);
+}
+
+/**
+ * @brief Generuje začiatok while cyklu
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_while_start(int label_id)
+{
+    // Label pre začiatok cyklu (sem sa vrátime po každej iterácii)
+    printf("LABEL $$while_start_%d\n", label_id);
+}
+
+/**
+ * @brief Generuje vyhodnotenie podmienky while cyklu
+ * @param condition_ast AST uzol s podmienkou
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_while_condition(t_ast_node *condition_ast, int label_id)
+{
+    // Generujeme kód pre vyhodnotenie podmienky
+    char result_var[256];
+    int err = generate_expression_code(condition_ast, result_var, sizeof(result_var));
+    if (err)
+    {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate while condition");
+    }
+
+    // Uložíme výsledok podmienky
+    printf("DEFVAR TF@%%while_cond_%d\n", label_id);
+    printf("MOVE TF@%%while_cond_%d %s\n", label_id, result_var);
+
+    // Kontrola pravdivosti - ak je false alebo null, opustime cyklus
+    printf("JUMPIFEQ $$while_end_%d TF@%%while_cond_%d nil@nil\n", label_id, label_id);
+    printf("JUMPIFEQ $$while_end_%d TF@%%while_cond_%d bool@false\n", label_id, label_id);
+
+    // Ak podmienka je true, pokračujeme do tela cyklu (kód nasleduje)
+}
+
+/**
+ * @brief Generuje koniec while cyklu
+ * @param label_id Unikátne ID pre labely
+ */
+void generate_while_end(int label_id)
+{
+    // Skočíme späť na začiatok (kontrola podmienky)
+    printf("JUMP $$while_start_%d\n", label_id);
+
+    // Label pre koniec cyklu
+    printf("LABEL $$while_end_%d\n", label_id);
 }
