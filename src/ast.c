@@ -31,7 +31,6 @@ t_ast_node *ast_create(t_token* token, t_ast_node *left, t_ast_node *right) {
     return NULL;
 }
 
-
 /**
  * Vytvorí nový listový AST uzol (bez potomkov).
  * @param token Ukazovateľ na token, ktorý sa uloží do listového uzl.
