@@ -824,17 +824,6 @@ void generate_if_start(t_ast_node *condition_ast, int label_id, bool skip_defvar
 }
 
 /**
- * @brief Generuje label pre then vetvu
- * @param label_id Unikátne ID pre labely
- */
-void generate_if_then(int label_id)
-{
-    // Then blok začína tu (kód then bloku bude vygenerovaný parserom)
-    // Na konci then bloku musíme preskočiť else vetvu
-    (void)label_id; // Then blok je default flow, nepotrebujeme label
-}
-
-/**
  * @brief Generuje prechod medzi then a else vetvou
  * @param label_id Unikátne ID pre labely
  */

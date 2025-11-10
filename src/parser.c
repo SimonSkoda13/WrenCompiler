@@ -1101,8 +1101,7 @@ void if_statement()
 
     putback_token(); // Putback { after expression
 
-    // Then blok
-    generate_if_then(label_id);
+    // Then blok (default flow - no label needed)
     block(); // Parser vygeneruje kód then bloku
 
     // Prechod na else
@@ -1532,7 +1531,7 @@ void term()
 {
     if (parser.current_token->type == GLOBAL_VAR)
     {
-        // TODO: Handle global variable access
+        // Global variables are handled in expression parsing
         return;
     }
 
