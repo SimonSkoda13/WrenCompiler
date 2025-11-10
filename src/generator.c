@@ -28,6 +28,21 @@ t_symtable *get_global_symtable()
     return global_symtable;
 }
 
+// Helper function to search for variable (local or global)
+static t_avl_node *search_variable(const char *var_name)
+{
+    // First try scoped search for local variables
+    t_avl_node *node = symtable_search_var_scoped(global_symtable, var_name);
+
+    // If not found, try global search
+    if (node == NULL)
+    {
+        node = symtable_search(global_symtable, var_name);
+    }
+
+    return node;
+}
+
 int get_next_label_id()
 {
     return ifj_label_counter++;
@@ -223,17 +238,17 @@ void builtin_write_integer_literal(long long number)
 
 void builtin_write_var(char *var_id)
 {
-    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_id);
-    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+    t_avl_node *var_node = search_variable(var_id);
+    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
+    {
+        // Global variables use GF@ frame
+        printf("WRITE GF@%s\n", var_id);
+    }
+    else if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
     {
         int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
         const char *unique_name = get_var_name_with_nesting(var_id, nesting);
         printf("WRITE LF@%s\n", unique_name);
-    }
-    else if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
-    {
-        // Global variables use GF@ frame
-        printf("WRITE GF@%s\n", var_id);
     }
     else
     {
@@ -375,17 +390,23 @@ void generate_push_float_literal(double value)
 
 void generate_push_variable(const char *var_name)
 {
-    // Nájdeme premennú s najvyšším nesting levelom
-    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
-    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+    // Nájdeme premennú
+    t_avl_node *var_node = search_variable(var_name);
+    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
     {
+        // Global variable - use GF@ frame
+        printf("PUSHS GF@%s\n", var_name);
+    }
+    else if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+    {
+        // Local variable - use LF@ frame with nesting suffix
         int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
         const char *unique_name = get_var_name_with_nesting(var_name, nesting);
         printf("PUSHS LF@%s\n", unique_name);
     }
     else
     {
-        // Global variable or parameter - use as is
+        // Parameter - use LF@ frame as is
         printf("PUSHS LF@%s\n", var_name);
     }
 }
@@ -430,17 +451,23 @@ void generate_setter_call(const char *setter_name)
 void generate_move_retval_to_var(const char *var_name)
 {
     // Po návrate z funkcie je návratová hodnota na zásobníku
-    // Nájdeme premennú s najvyšším nesting levelom
-    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
-    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+    // Nájdeme premennú
+    t_avl_node *var_node = search_variable(var_name);
+    if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
     {
+        // Global variable - use GF@ frame
+        printf("POPS GF@%s\n", var_name);
+    }
+    else if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+    {
+        // Local variable - use LF@ frame with nesting suffix
         int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
         const char *unique_name = get_var_name_with_nesting(var_name, nesting);
         printf("POPS LF@%s\n", unique_name);
     }
     else
     {
-        // Global variable or parameter - use as is
+        // Parameter - use LF@ frame as is
         printf("POPS LF@%s\n", var_name);
     }
 }
@@ -535,17 +562,23 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
     case IDENTIFIER:
     case GLOBAL_VAR:
     {
-        // Nájdeme premennú s najvyšším nesting levelom
-        t_avl_node *var_node = symtable_search_var_scoped(global_symtable, node->token->value.string);
-        if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+        // Nájdeme premennú
+        t_avl_node *var_node = search_variable(node->token->value.string);
+        if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
         {
+            // Global variable - use GF@ frame
+            snprintf(result, result_size, "GF@%s", node->token->value.string);
+        }
+        else if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+        {
+            // Local variable - use LF@ frame with nesting suffix
             int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
             const char *unique_name = get_var_name_with_nesting(node->token->value.string, nesting);
             snprintf(result, result_size, "LF@%s", unique_name);
         }
         else
         {
-            // Global variable or not found - use as is
+            // Parameter or not found - use as is with LF@
             snprintf(result, result_size, "LF@%s", node->token->value.string);
         }
         break;
@@ -690,20 +723,37 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
         exit_with_error(ERR_INTERNAL, "Internal error: NULL AST in generate_assignment");
     }
 
-    // Nájdeme premennú s najvyšším nesting levelom
-    t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
+    // Find variable (local or global)
+    t_avl_node *var_node = search_variable(var_name);
+
     if (var_node == NULL)
     {
         exit_with_error(ERR_INTERNAL, "Internal error: Variable '%s' not found in symbol table", var_name);
     }
 
-    int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-    const char *temp_unique_name = get_var_name_with_nesting(var_name, nesting);
-
-    // MUST COPY because get_var_name_with_nesting uses static buffer!
+    // Check if it's a global variable
+    bool is_global = (var_node->ifj_sym_type == SYM_VAR_GLOBAL);
+    char frame_prefix[32];
     char unique_name[256];
-    strncpy(unique_name, temp_unique_name, sizeof(unique_name) - 1);
-    unique_name[sizeof(unique_name) - 1] = '\0';
+
+    if (is_global)
+    {
+        // Global variables use GF@ frame and no nesting suffix
+        strcpy(frame_prefix, "GF@");
+        strncpy(unique_name, var_name, sizeof(unique_name) - 1);
+        unique_name[sizeof(unique_name) - 1] = '\0';
+    }
+    else
+    {
+        // Local variables use LF@ frame and nesting suffix
+        strcpy(frame_prefix, "LF@");
+        int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
+        const char *temp_unique_name = get_var_name_with_nesting(var_name, nesting);
+
+        // MUST COPY because get_var_name_with_nesting uses static buffer!
+        strncpy(unique_name, temp_unique_name, sizeof(unique_name) - 1);
+        unique_name[sizeof(unique_name) - 1] = '\0';
+    }
 
     // Ak je to jednoduchý literál alebo premenná, priamo priradíme
     if (ast->left == NULL && ast->right == NULL)
@@ -715,7 +765,7 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
             {
                 // Je to getter - zavolali sme ho, výsledok je na zásobníku
                 // Popneme ho do cieľovej premennej
-                printf("POPS LF@%s\n", unique_name);
+                printf("POPS %s%s\n", frame_prefix, unique_name);
                 return;
             }
         }
@@ -723,7 +773,7 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
         // Nie je to getter - štandardné spracovanie
         char value_str[512];
         get_value_string(ast, value_str, sizeof(value_str));
-        printf("MOVE LF@%s %s\n", unique_name, value_str);
+        printf("MOVE %s%s %s\n", frame_prefix, unique_name, value_str);
     }
     else
     {
@@ -735,7 +785,7 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
             exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate expression code");
         }
         // Presunieme výsledok do cieľovej premennej
-        printf("MOVE LF@%s %s\n", unique_name, result_var);
+        printf("MOVE %s%s %s\n", frame_prefix, unique_name, result_var);
     }
 }
 

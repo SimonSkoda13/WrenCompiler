@@ -648,25 +648,36 @@ void statement()
 void var_decl()
 {
     check_token(KEYWORD);
-    consume_token(IDENTIFIER); // var identifier
+    next_token();
+
+    // Check if it's a global variable (starts with __)
+    bool is_global = (parser.current_token->type == GLOBAL_VAR);
+    e_token_type var_token_type = parser.current_token->type;
+
+    if (!is_global && parser.current_token->type != IDENTIFIER)
+    {
+        exit_with_error(ERR_SYNTAX,
+                        "Syntax error: Expected variable identifier at line %d",
+                        parser.scanner->line);
+    }
 
     // Získame meno premennej
     char *var_name = parser.current_token->value.string;
 
-    // Skontrolujeme či premenná už existuje NA AKTUÁLNOM NESTING LEVELI
-    // (povoľujeme shadowing - premenná môže existovať na inom nesting leveli)
-    t_avl_node *existing = symtable_search_var_current_nesting(parser.symtable, var_name);
+    // Skontrolujeme či premenná už existuje
+    t_avl_node *existing = is_global ? symtable_search(parser.symtable, var_name) : symtable_search_var_current_nesting(parser.symtable, var_name);
+
     if (existing != NULL)
     {
-        // Premenná už existuje na tomto nesting leveli - sémantická chyba (redefinícia)
+        // Premenná už existuje - sémantická chyba (redefinícia)
         exit_with_error(ERR_SEM_REDEF,
                         "Semantic error: Variable '%s' already declared at line %d",
                         var_name, parser.scanner->line);
     }
 
-    // Pridáme premennú do tabuľky symbolov bez konkrétneho typu (TYPE_UNKNOWN)
-    bool success = symtable_insert_var(parser.symtable, var_name,
-                                       SYM_VAR_LOCAL, TYPE_UNKNOWN);
+    // Pridáme premennú do tabuľky symbolov
+    e_symbol_type sym_type = is_global ? SYM_VAR_GLOBAL : SYM_VAR_LOCAL;
+    bool success = symtable_insert_var(parser.symtable, var_name, sym_type, TYPE_UNKNOWN);
     if (!success)
     {
         exit_with_error(ERR_INTERNAL,
@@ -674,9 +685,15 @@ void var_decl()
                         var_name, parser.scanner->line);
     }
 
-    // If we're collecting loop variables, add to list and skip DEFVAR
-    if (collecting_loop_vars)
+    // Generate DEFVAR
+    if (is_global)
     {
+        // Global variables use GF@ frame
+        printf("DEFVAR GF@%s\n", var_name);
+    }
+    else if (collecting_loop_vars)
+    {
+        // Local variable in loop - add to list and skip DEFVAR
         if (loop_vars_count < MAX_LOOP_VARS)
         {
             // Store the FULL variable name with nesting suffix
@@ -693,7 +710,7 @@ void var_decl()
     }
     else
     {
-        // Vygenerujeme kód pre deklaráciu premennej (only if not in loop)
+        // Regular local variable - generate DEFVAR
         generate_var_declaration(var_name);
     }
 
@@ -766,19 +783,27 @@ static t_ast_node *parse_builtin_param()
 
 void assign()
 {
+    // Remember if this is a global variable
+    bool is_global_var = (parser.current_token->type == GLOBAL_VAR);
+
     // Uložíme názov identifieru pred consume_token - MUST COPY because tokens will be overwritten!
     char identifier_copy[256];
     strncpy(identifier_copy, parser.current_token->value.string, sizeof(identifier_copy) - 1);
     identifier_copy[sizeof(identifier_copy) - 1] = '\0';
     char *identifier = identifier_copy;
 
-    // Skontrolujeme či to môže byť setter
-    char *setter_mangled = mangle_setter_name(identifier);
+    // Skontrolujeme či to môže byť setter (only for regular identifiers, not globals)
+    char *setter_mangled = NULL;
     t_avl_node *setter_node = NULL;
-    if (setter_mangled != NULL)
+
+    if (!is_global_var)
     {
-        setter_node = symtable_search(parser.symtable, setter_mangled);
-        free(setter_mangled);
+        setter_mangled = mangle_setter_name(identifier);
+        if (setter_mangled != NULL)
+        {
+            setter_node = symtable_search(parser.symtable, setter_mangled);
+            free(setter_mangled);
+        }
     }
 
     // Ak je to setter, spracujeme ho
@@ -833,8 +858,19 @@ void assign()
         return;
     }
 
-    // Nie je to setter - musí to byť premenná (hľadáme s najvyšším nesting levelom)
-    t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, identifier);
+    // Nie je to setter - musí to byť premenná
+    t_avl_node *var_node;
+    if (is_global_var)
+    {
+        // Global variable - use standard search
+        var_node = symtable_search(parser.symtable, identifier);
+    }
+    else
+    {
+        // Local variable - use scoped search (finds highest nesting level)
+        var_node = symtable_search_var_scoped(parser.symtable, identifier);
+    }
+
     if (var_node == NULL)
     {
         exit_with_error(ERR_SEM_UNDEF,
@@ -858,12 +894,22 @@ void assign()
         char *builtin_name = parser.current_token->value.string;
         consume_token(LEFT_PAREN);
 
-        // Declare result variable first
+        // Declare result variable with proper frame
         t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, var_name);
-        int nesting = (var_node && var_node->ifj_sym_type == SYM_VAR_LOCAL) ? var_node->ifj_data.ifj_var.ifj_nesting_level : 0;
-        const char *result_var_name = get_var_name_with_nesting(var_name, nesting);
         char result_var[512];
-        snprintf(result_var, sizeof(result_var), "LF@%s", result_var_name);
+
+        if (var_node && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
+        {
+            // Global variable - use GF@ frame
+            snprintf(result_var, sizeof(result_var), "GF@%s", var_name);
+        }
+        else
+        {
+            // Local variable - use LF@ frame with nesting suffix
+            int nesting = (var_node && var_node->ifj_sym_type == SYM_VAR_LOCAL) ? var_node->ifj_data.ifj_var.ifj_nesting_level : 0;
+            const char *result_var_name = get_var_name_with_nesting(var_name, nesting);
+            snprintf(result_var, sizeof(result_var), "LF@%s", result_var_name);
+        }
 
         // Generate code based on built-in function type
         if (strcmp(builtin_name, "write") == 0)

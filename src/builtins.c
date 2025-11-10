@@ -131,7 +131,8 @@ void generate_builtin_read_str(const char *result_var)
     {
         exit_with_error(ERR_INTERNAL, "Internal error: NULL result variable in Ifj.read_str()");
     }
-    printf("READ LF@%s string\n", result_var);
+    // result_var already contains "LF@" prefix
+    printf("READ %s string\n", result_var);
 }
 
 // Function to generate code for expressions (stub, to be implemented)
@@ -141,7 +142,8 @@ void generate_builtin_read_num(const char *result_var)
     {
         exit_with_error(ERR_INTERNAL, "Internal error: NULL result variable in Ifj.read_num()");
     }
-    printf("READ LF@%s float\n", result_var);
+    // result_var already contains "LF@" prefix
+    printf("READ %s float\n", result_var);
 }
 
 // Function to generate code for expressions (stub, to be implemented)
@@ -237,7 +239,10 @@ void generate_builtin_str(const char *result_var, t_ast_node *param_node)
 
     // === INT PRÍPAD ===
     printf("LABEL $$str_is_int_%d\n", label_id);
-    printf("INT2STRING %s %s\n", result_var, param_var);
+    // INT2STRING doesn't exist in IFJcode25 - convert to float first, then to string
+    printf("DEFVAR LF@__str_tmp_float_%d\n", label_id);
+    printf("INT2FLOAT LF@__str_tmp_float_%d %s\n", label_id, param_var);
+    printf("FLOAT2STR %s LF@__str_tmp_float_%d\n", result_var, label_id);
     printf("JUMP $$str_end_%d\n", label_id);
 
     // === FLOAT PRÍPAD - formát %.2f ===
