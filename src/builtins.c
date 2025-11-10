@@ -8,6 +8,7 @@
 
 #include "builtins.h"
 #include "generator.h"
+#include "symtable.h"
 #include "errors.h"
 #include "scanner.h"
 #include <stdio.h>
@@ -58,8 +59,27 @@ static void get_param_value(t_ast_node *node, char *result, size_t result_size)
     }
 
     case IDENTIFIER:
+    {
+        // Need to check nesting level for local variables
+        // Use the generator function that handles this
+        t_avl_node *var_node = symtable_search_var_scoped(get_global_symtable(), node->token->value.string);
+        if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
+        {
+            int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
+            const char *unique_name = get_var_name_with_nesting(node->token->value.string, nesting);
+            snprintf(result, result_size, "LF@%s", unique_name);
+        }
+        else
+        {
+            // Parameter or function-scoped variable
+            snprintf(result, result_size, "LF@%s", node->token->value.string);
+        }
+        break;
+    }
+
     case GLOBAL_VAR:
-        snprintf(result, result_size, "LF@%s", node->token->value.string);
+        // Global variables start with __ and use GF@ frame
+        snprintf(result, result_size, "GF@%s", node->token->value.string);
         break;
 
     case KEYWORD:
@@ -140,7 +160,26 @@ void generate_builtin_floor(const char *result_var, t_ast_node *param_node)
         exit_with_error(ERR_INTERNAL, "Failed to generate expression for Ifj.floor()");
     }
 
-    printf("FLOAT2INT LF@%s %s\n", result_var, param_var);
+    static int floor_counter = 0;
+    int label_id = floor_counter++;
+
+    // Runtime type check - parameter must be int or float
+    printf("DEFVAR LF@__floor_type_%d\n", label_id);
+    printf("TYPE LF@__floor_type_%d %s\n", label_id, param_var);
+    printf("JUMPIFEQ $$floor_type_int_%d LF@__floor_type_%d string@int\n", label_id, label_id);
+    printf("JUMPIFEQ $$floor_type_float_%d LF@__floor_type_%d string@float\n", label_id, label_id);
+    printf("EXIT int@25\n");
+
+    // If int, just copy the value
+    printf("LABEL $$floor_type_int_%d\n", label_id);
+    printf("MOVE %s %s\n", result_var, param_var);
+    printf("JUMP $$floor_end_%d\n", label_id);
+
+    // If float, convert to int
+    printf("LABEL $$floor_type_float_%d\n", label_id);
+    printf("FLOAT2INT %s %s\n", result_var, param_var);
+
+    printf("LABEL $$floor_end_%d\n", label_id);
 }
 
 void generate_builtin_str(const char *result_var, t_ast_node *param_node)
@@ -203,7 +242,7 @@ void generate_builtin_str(const char *result_var, t_ast_node *param_node)
 
     // === FLOAT PRÍPAD - formát %.2f ===
     printf("LABEL $$str_is_float_%d\n", label_id);
-    printf("FLOAT2STRING %s %s\n", result_var, param_var);
+    printf("FLOAT2STR %s %s\n", result_var, param_var);
     printf("JUMP $$str_end_%d\n", label_id);
 
     // === NULL PRÍPAD ===
@@ -346,11 +385,12 @@ void generate_builtin_substring(const char *result_var, t_ast_node *param_node, 
     // j < 0 -> null
     printf("LT LF@__substr_cmp_%d %s int@0\n", label_id, j_var);
     printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@true\n", label_id, label_id);
+
     // i > j -> null
     printf("GT LF@__substr_cmp_%d %s %s\n", label_id, i_var, j_var);
     printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@true\n", label_id, label_id);
 
-    // i >= length(s) -> null
+    // i >= length(s) -> null (check if NOT i < length)
     printf("LT LF@__substr_cmp_%d %s LF@__substr_len_%d\n", label_id, i_var, label_id);
     printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@false\n", label_id, label_id);
 
@@ -482,14 +522,14 @@ void generate_builtin_ord(const char *result_var, t_ast_node *param_node, t_ast_
     static int ord_counter = 0;
     int label_id = ord_counter++;
 
-    // Type checking 
+    // Type checking
     printf("DEFVAR LF@__ord_type_%d\n", label_id);
     printf("TYPE LF@__ord_type_%d %s\n", label_id, str_var);
     printf("JUMPIFEQ $$ord_s_ok_%d LF@__ord_type_%d string@string\n", label_id, label_id);
     printf("EXIT int@25\n");
     printf("LABEL $$ord_s_ok_%d\n", label_id);
 
-    // Type checking 
+    // Type checking
     printf("TYPE LF@__ord_type_%d %s\n", label_id, i_var);
     printf("JUMPIFEQ $$ord_i_ok_%d LF@__ord_type_%d string@int\n", label_id, label_id);
     printf("EXIT int@26\n");
@@ -499,12 +539,12 @@ void generate_builtin_ord(const char *result_var, t_ast_node *param_node, t_ast_
     printf("DEFVAR LF@__ord_len_%d\n", label_id);
     printf("STRLEN LF@__ord_len_%d %s\n", label_id, str_var);
 
-    // Kontrola či je string prázdny 
+    // Kontrola či je string prázdny
     printf("DEFVAR LF@__ord_cmp_%d\n", label_id);
     printf("EQ LF@__ord_cmp_%d LF@__ord_len_%d int@0\n", label_id, label_id);
     printf("JUMPIFEQ $$ord_return_zero_%d LF@__ord_cmp_%d bool@true\n", label_id, label_id);
 
-    // Kontrola či i < 0 
+    // Kontrola či i < 0
     printf("LT LF@__ord_cmp_%d %s int@0\n", label_id, i_var);
     printf("JUMPIFEQ $$ord_return_zero_%d LF@__ord_cmp_%d bool@true\n", label_id, label_id);
 

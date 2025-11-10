@@ -15,16 +15,18 @@
 #include "generator.h"
 #include "symtable.h"
 #include "ast.h"
+#include "builtins.h"
 
 /**
  * @struct Štruktúra pre parser.
  */
-typedef struct {
+typedef struct
+{
     t_scanner *scanner;
     t_token *current_token;
     t_token *putback_token;
     bool has_putback;
-    t_symtable *symtable;  // Tabuľka symbolov
+    t_symtable *symtable; // Tabuľka symbolov
 } t_parser;
 
 /**
@@ -44,7 +46,7 @@ extern bool is_generating_main;
 
 /**
  * Získa nasledujúci token zo scanneru.
- * Ak je has_putback true, vráti uložený putback token namiesto získania nového a nastaví has_putback na false. 
+ * Ak je has_putback true, vráti uložený putback token namiesto získania nového a nastaví has_putback na false.
  */
 void next_token();
 /**
@@ -139,7 +141,7 @@ int arg_list_tail();
  * @param token2 Druhý token výrazu (môže byť NULL)
  * @return Ukazovateľ na AST koreň výrazu
  */
-t_ast_node* expression(t_token *token1, t_token *token2);
+t_ast_node *expression(t_token *token1, t_token *token2);
 void expression_continue();
 /**
  * Spracuje terminál vo výraze.
@@ -158,6 +160,5 @@ void eols();
  * Hlavná funkcia pre spustenie parsera.
  */
 void parse_program();
-
 
 #endif // WRENCOMPILER_PARSER_H

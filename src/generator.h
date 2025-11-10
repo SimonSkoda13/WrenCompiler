@@ -17,10 +17,10 @@
 #include "ast.h"
 #include "symtable.h"
 
-
 // Forward deklarácia pre t_param_list
 #define MAX_PARAMS 32
-typedef struct {
+typedef struct
+{
     char *names[MAX_PARAMS];
     int count;
 } t_param_list;
@@ -45,7 +45,7 @@ size_t calculate_escaped_length(const char *input);
  * @return Nově alokovaný string s escape sekvenciami, alebo NULL pri chybe
  *         Volajúci musí uvoľniť pamäť pomocou free()
  */
-char* convert_to_escaped_string(const char *input);
+char *convert_to_escaped_string(const char *input);
 
 /**
  * @brief Vytvára manglované meno funkcie pre podporu preťažovania
@@ -54,7 +54,7 @@ char* convert_to_escaped_string(const char *input);
  * @return Nově alokovaný string s manglovaným menom (napr. "foo$arity2")
  *         Volajúci musí uvoľniť pamäť pomocou free()
  */
-char* mangle_function_name(const char *func_name, int param_count);
+char *mangle_function_name(const char *func_name, int param_count);
 
 /**
  * @brief Vytvára manglované meno pre statický getter
@@ -62,7 +62,7 @@ char* mangle_function_name(const char *func_name, int param_count);
  * @return Nově alokovaný string s manglovaným menom (napr. "getValue$get")
  *         Volajúci musí uvoľniť pamäť pomocou free()
  */
-char* mangle_getter_name(const char *getter_name);
+char *mangle_getter_name(const char *getter_name);
 
 /**
  * @brief Vytvára manglované meno pre statický setter
@@ -70,13 +70,27 @@ char* mangle_getter_name(const char *getter_name);
  * @return Nově alokovaný string s manglovaným menom (napr. "setValue$set")
  *         Volajúci musí uvoľniť pamäť pomocou free()
  */
-char* mangle_setter_name(const char *setter_name);
+char *mangle_setter_name(const char *setter_name);
+
+/**
+ * @brief Generuje unikátny názov premennej s nesting levelom
+ * @param var_name Základný názov premennej
+ * @param nesting_level Úroveň vnorenia (0 = parameter, 1+ = vnorené bloky)
+ * @return Ukazovateľ na statický buffer s unikátnym názvom
+ */
+const char *get_var_name_with_nesting(const char *var_name, int nesting_level);
 
 /**
  * @brief Nastaví globálnu tabuľku symbolov pre generátor
  * @param ifj_symtable Ukazovateľ na tabuľku symbolov
  */
 void generator_set_symtable(t_symtable *ifj_symtable);
+
+/**
+ * @brief Získa globálnu tabuľku symbolov
+ * @return Ukazovateľ na tabuľku symbolov
+ */
+t_symtable *get_global_symtable();
 
 /**
  * @brief Generuje hlavičku programu (.IFJcode25)
