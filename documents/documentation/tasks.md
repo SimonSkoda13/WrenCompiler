@@ -46,14 +46,6 @@
 
 ## vrbiniak
 
-## Task 4: Stack implementation
-
----
-
-## Possible tasks
-
----
-
 ## Task 4: Semantic Analysis
 
 **Files:** `src/semantic.c`, `src/semantic.h`
@@ -63,6 +55,10 @@
 - Check function argument counts (error 5)
 - Check type compatibility (error 6)
 - Handle function overloading
+
+---
+
+## Possible tasks
 
 ---
 
