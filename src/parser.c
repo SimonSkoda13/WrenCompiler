@@ -19,6 +19,11 @@ static char *loop_vars[MAX_LOOP_VARS];
 static int loop_vars_count = 0;
 static bool collecting_loop_vars = false;
 
+// Tracking if statement labels inside loops (for predeclaration of %if_cond_X)
+#define MAX_LOOP_IFS 50
+static int loop_if_labels[MAX_LOOP_IFS];
+static int loop_if_labels_count = 0;
+
 // DEBUG
 void ast_print_tree(t_ast_node *node, int depth)
 {
@@ -761,8 +766,11 @@ static t_ast_node *parse_builtin_param()
 
 void assign()
 {
-    // Uložíme názov identifieru pred consume_token
-    char *identifier = parser.current_token->value.string;
+    // Uložíme názov identifieru pred consume_token - MUST COPY because tokens will be overwritten!
+    char identifier_copy[256];
+    strncpy(identifier_copy, parser.current_token->value.string, sizeof(identifier_copy) - 1);
+    identifier_copy[sizeof(identifier_copy) - 1] = '\0';
+    char *identifier = identifier_copy;
 
     // Skontrolujeme či to môže byť setter
     char *setter_mangled = mangle_setter_name(identifier);
@@ -1027,13 +1035,23 @@ void if_statement()
     // Získame unikátne ID pre labely
     int label_id = get_next_label_id();
 
+    // Ak zbierame premenné v rámci while, zaznamenáme aj tento if label
+    if (collecting_loop_vars)
+    {
+        if (loop_if_labels_count < MAX_LOOP_IFS)
+        {
+            loop_if_labels[loop_if_labels_count++] = label_id;
+        }
+    }
+
     consume_token(LEFT_PAREN); // '('
 
     // Získame AST podmienky
     t_ast_node *condition_ast = expression(parser.current_token, NULL);
 
     // Generujeme vyhodnotenie podmienky a skoky
-    generate_if_start(condition_ast, label_id);
+    // Skip DEFVAR if we're collecting loop vars (will be predeclared before loop)
+    generate_if_start(condition_ast, label_id, collecting_loop_vars);
 
     putback_token(); // Putback { after expression
 
@@ -1077,6 +1095,7 @@ void while_statement()
 
     // Start collecting variable declarations from loop body
     loop_vars_count = 0;
+    loop_if_labels_count = 0; // Reset if labels counter
     collecting_loop_vars = true;
 
     // Save current stdout to restore later
@@ -1126,6 +1145,12 @@ void while_statement()
     for (int i = 0; i < loop_vars_count; i++)
     {
         fprintf(stdout, "DEFVAR LF@%s\n", loop_vars[i]);
+    }
+
+    // Predeclare all if condition variables from if statements inside this loop
+    for (int i = 0; i < loop_if_labels_count; i++)
+    {
+        fprintf(stdout, "DEFVAR LF@%%if_cond_%d\n", loop_if_labels[i]);
     }
 
     // Label pre začiatok cyklu

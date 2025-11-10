@@ -698,7 +698,12 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
     }
 
     int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-    const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+    const char *temp_unique_name = get_var_name_with_nesting(var_name, nesting);
+
+    // MUST COPY because get_var_name_with_nesting uses static buffer!
+    char unique_name[256];
+    strncpy(unique_name, temp_unique_name, sizeof(unique_name) - 1);
+    unique_name[sizeof(unique_name) - 1] = '\0';
 
     // Ak je to jednoduchý literál alebo premenná, priamo priradíme
     if (ast->left == NULL && ast->right == NULL)
@@ -739,7 +744,7 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
  * @param condition_ast AST uzol s podmienkou
  * @param label_id Unikátne ID pre labely
  */
-void generate_if_start(t_ast_node *condition_ast, int label_id)
+void generate_if_start(t_ast_node *condition_ast, int label_id, bool skip_defvar)
 {
     // Generujeme kód pre vyhodnotenie podmienky
     char result_var[256];
@@ -750,7 +755,11 @@ void generate_if_start(t_ast_node *condition_ast, int label_id)
     }
 
     // Uložíme výsledok podmienky do temporary premennej
-    printf("DEFVAR LF@%%if_cond_%d\n", label_id);
+    // Skip DEFVAR if we're inside while loop (already predeclared)
+    if (!skip_defvar)
+    {
+        printf("DEFVAR LF@%%if_cond_%d\n", label_id);
+    }
     printf("MOVE LF@%%if_cond_%d %s\n", label_id, result_var);
 
     // Kontrola pravdivosti podľa zadania:

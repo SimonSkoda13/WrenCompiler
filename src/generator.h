@@ -220,7 +220,7 @@ int get_next_label_id(void);
  * @param condition_ast AST uzol s podmienkou
  * @param label_id Unikátne ID pre labely
  */
-void generate_if_start(t_ast_node *condition_ast, int label_id);
+void generate_if_start(t_ast_node *condition_ast, int label_id, bool skip_defvar);
 
 /**
  * @brief Generuje label pre then vetvu (prázdna funkcia - flow continues)
