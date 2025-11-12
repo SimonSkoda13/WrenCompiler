@@ -148,14 +148,53 @@ char *mangle_function_name(const char *func_name, int param_count)
     return mangled;
 }
 
+/**
+ * @brief Pomocná funkcia pre generovanie názvu dočasnej premennej
+ * @return Číslo dočasnej premennej
+ */
+int get_next_temp_var()
+{
+    return temp_var_counter++;
+}
+
+/**
+ * @brief Pomocná funkcia pre konverziu INT operandu na FLOAT (ak je potrebné)
+ * @param operand Operand ktorý môže byť int@ alebo float@ alebo premenná
+ * @param result Buffer pre výsledok (skonvertovaný operand)
+ * @param result_size Veľkosť bufferu
+ */
+static void convert_operand_to_float(const char *operand, char *result, size_t result_size)
+{
+    // Ak je operand INT literál, prekonvertuj ho na FLOAT
+    if (strncmp(operand, "int@", 4) == 0)
+    {
+        int tmp = get_next_temp_var();
+        snprintf(result, result_size, "LF@__tmp%d", tmp);
+        printf("INT2FLOAT %s %s\n", result, operand);
+    }
+    else
+    {
+        // Nie je INT literál, použijeme ho ako je
+        strncpy(result, operand, result_size - 1);
+        result[result_size - 1] = '\0';
+    }
+}
+
 /// Helper funkcia pre kontorolu delenia nulou a kod delenia
 static void generate_division(const char *result_var, const char *left_var, const char *right_var, int unique_id)
 {
+    char final_left[256];
+    char final_right[256];
+    
+    // Prekonvertuj oba operandy na FLOAT (ak sú INT)
+    convert_operand_to_float(left_var, final_left, sizeof(final_left));
+    convert_operand_to_float(right_var, final_right, sizeof(final_right));
+    
     // Kontrola delenia nulou
-    printf("JUMPIFEQ $$div_zero_%d %s float@0x0p+0\n", unique_id, right_var);
+    printf("JUMPIFEQ $$div_zero_%d %s float@0x0p+0\n", unique_id, final_right);
 
     // Delenie
-    printf("DIV %s %s %s\n", result_var, left_var, right_var);
+    printf("DIV %s %s %s\n", result_var, final_left, final_right);
     printf("JUMP $$div_end_%d\n", unique_id);
 
     // Error handling
@@ -496,14 +535,7 @@ void generate_move_retval_to_var(const char *var_name)
 // Pomocná premenná pre generovanie dočasných premenných
 static int temp_var_counter = 0;
 
-/**
- * @brief Pomocná funkcia pre generovanie názvu dočasnej premennej
- * @return Číslo dočasnej premennej
- */
-int get_next_temp_var()
-{
-    return temp_var_counter++;
-}
+
 
 /**
  * @brief Skontroluje či identifier je getter a ak áno, vygeneruje jeho volanie
@@ -549,7 +581,7 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
     case NUM_INT:
     case NUM_EXP_INT:
     case NUM_HEX:
-        snprintf(result, result_size, "float@%a", (double)node->token->value.number_int);
+        snprintf(result, result_size, "int@%ld", node->token->value.number_int);
         break;
     case NUM_FLOAT:
     case NUM_EXP_FLOAT:
