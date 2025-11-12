@@ -549,7 +549,7 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
     case NUM_INT:
     case NUM_EXP_INT:
     case NUM_HEX:
-        snprintf(result, result_size, "float@%a", node->token->value.number_int);
+        snprintf(result, result_size, "float@%a", (double)node->token->value.number_int);
         break;
     case NUM_FLOAT:
     case NUM_EXP_FLOAT:
