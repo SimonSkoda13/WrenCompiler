@@ -4,6 +4,8 @@
  *
  * Autori:
  *   - Martin Michálik (xmicham00)
+ *   - Matúš Magyar (xmagyam00)
+ *   - Šimon Škoda (xskoda00)
  */
 
 #include "generator.h"
@@ -146,6 +148,23 @@ char *mangle_function_name(const char *func_name, int param_count)
     return mangled;
 }
 
+/// Helper funkcia pre kontorolu delenia nulou a kod delenia
+static void generate_division(const char *result_var, const char *left_var, const char *right_var, int unique_id)
+{
+    // Kontrola delenia nulou
+    printf("JUMPIFEQ $$div_zero_%d %s float@0x0p+0\n", unique_id, right_var);
+
+    // Delenie
+    printf("DIV %s %s %s\n", result_var, left_var, right_var);
+    printf("JUMP $$div_end_%d\n", unique_id);
+
+    // Error handling
+    printf("LABEL $$div_zero_%d\n", unique_id);
+    printf("EXIT int@9\n");
+
+    printf("LABEL $$div_end_%d\n", unique_id);
+}
+
 char *mangle_getter_name(const char *getter_name)
 {
     if (getter_name == NULL)
@@ -231,9 +250,10 @@ void builtin_write_float_literal(double number)
     printf("WRITE float@%a\n", number);
 }
 
+//Aj tu INT bude float (snad to bude spravne)
 void builtin_write_integer_literal(long long number)
 {
-    printf("WRITE int@%lld\n", number);
+    printf("WRITE float@%a\n", (double)number);
 }
 
 void builtin_write_var(char *var_id)
@@ -378,9 +398,10 @@ void generate_push_string_literal(const char *str)
     free(escaped);
 }
 
+//Aj INT bude float 
 void generate_push_int_literal(long long value)
 {
-    printf("PUSHS int@%lld\n", value);
+    printf("PUSHS float@%a\n", (double)value);
 }
 
 void generate_push_float_literal(double value)
@@ -528,7 +549,7 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
     case NUM_INT:
     case NUM_EXP_INT:
     case NUM_HEX:
-        snprintf(result, result_size, "int@%ld", node->token->value.number_int);
+        snprintf(result, result_size, "float@%a", node->token->value.number_int);
         break;
     case NUM_FLOAT:
     case NUM_EXP_FLOAT:
@@ -683,7 +704,7 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         printf("MUL %s %s %s\n", result_var, left_var, right_var);
         break;
     case OP_DIV:
-        printf("DIV %s %s %s\n", result_var, left_var, right_var);
+        generate_division(result_var, left_var, right_var, get_next_label_id()); // pouzitie funkcie na delenie
         break;
     case OP_LESS_THAN:
         printf("LT %s %s %s\n", result_var, left_var, right_var);
