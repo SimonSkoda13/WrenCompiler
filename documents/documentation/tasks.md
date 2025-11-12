@@ -39,9 +39,9 @@
 
 **Files:** `src/builtins.c`, `src/builtins.h`
 
-- Implement: `Ifj.read_str()`, `Ifj.read_num()`, `Ifj.write()`
-- Implement: `Ifj.floor()`, `Ifj.str()`
-- Implement: `Ifj.length()`, `Ifj.substring()`, `Ifj.strcmp()`, `Ifj.ord()`, `Ifj.chr()`
+- [x] Implement: `Ifj.read_str()`, `Ifj.read_num()`, `Ifj.write()`
+- [x] Implement: `Ifj.floor()`, `Ifj.str()`
+- [x] Implement: `Ifj.length()`, `Ifj.substring()`, `Ifj.strcmp()`, `Ifj.ord()`, `Ifj.chr()`
 
 ---
 
@@ -135,7 +135,7 @@
 
 ### Semantická anylýza
 
-- Tu bude treba tabuľku symbolov
+- [x] Tu bude treba tabuľku symbolov
 - Treba v parseri aj zisťovať akého typu sú premenné
 - Proste ak budem mať niečo ako `foo = 2 + bar` tak musím dať pozor aby `bar` bol typu `Num`
 - Tiež zisťovať použitie nedeklarovanej funkcie alebo premennej. S funkciami to bude trochu náročenjšie keďže sa môžu nachádzať
@@ -164,8 +164,8 @@
   riešiť v tej globálnej tabuľke
 - [x] Bloky. Je to vysvetlené v democivku aký tu nastáva problém. Takže bude treba urobiť name-mangling pri vkladaní do tabuľky symbolov
       a potom získať aj správnu premennú z tabuľky podľa zanorenia
-- Built-in funkcie. Tá funkcia Ifj.write je len jeden z pár špeciálnych prípadov kedy sa to dá riešiť takto. Bude treba podporovať
-  aj iné builtin funkcie ktoré si však budeme musieť vygenerovať sami
+- [x] Built-in funkcie. Tá funkcia Ifj.write je len jeden z pár špeciálnych prípadov kedy sa to dá riešiť takto. Bude treba podporovať
+      aj iné builtin funkcie ktoré si však budeme musieť vygenerovať sami
 - Vyriešiť generáciu kodú pre operácie s reťazcami (+ \*)
 - Typové kontroly za behu programu. Viz. zadanie
-- Urobiť generovanie kódu pre ostatné koštrukcie (if, while, ...)
+- [x] Urobiť generovanie kódu pre ostatné koštrukcie (if, while, ...)

@@ -38,6 +38,7 @@ typedef struct
   bool ifj_initialized; // is it initialized?
   int ifj_scope_level;  // scope (0=global, higher=local)
   int ifj_nesting_level; // nesting level within function (0=params, 1+=nested blocks)
+  int ifj_block_id;     // unique block ID for this variable
   e_data_type ifj_type; // what type is it
 } t_var_metadata;
 
@@ -67,12 +68,22 @@ typedef struct avl_node
   struct avl_node *ifj_right; // right child
 } t_avl_node;
 
+// Maximum nesting depth
+#define MAX_NESTING_DEPTH 100
+#define MAX_FUNCTION_VARS 256
+
 // Main symbol table structure
 typedef struct
 {
   t_avl_node *ifj_root;     // root of AVL tree
   int ifj_current_scope;    // current scope level
   int ifj_current_nesting;  // current nesting level within function
+  int ifj_block_stack[MAX_NESTING_DEPTH];  // stack of active block IDs
+  int ifj_block_stack_top;  // top of block stack
+  int ifj_next_block_id;    // counter for generating unique block IDs
+  // List of all variables declared in current function (for DEFVAR generation)
+  char *ifj_function_vars[MAX_FUNCTION_VARS];  // array of variable names with block suffix
+  int ifj_function_vars_count;  // count of variables in current function
 } t_symtable;
 
 // Initialize symbol table
@@ -122,5 +133,14 @@ t_avl_node *symtable_search_var_scoped(t_symtable *ifj_table, const char *ifj_ke
 // Search for variable at current nesting level only
 // Used to check for redeclaration within same block
 t_avl_node *symtable_search_var_current_nesting(t_symtable *ifj_table, const char *ifj_key);
+
+// Start collecting variable declarations for a function
+void symtable_start_function(t_symtable *ifj_table);
+
+// Add variable to function's declaration list
+void symtable_add_function_var(t_symtable *ifj_table, const char *var_name_with_suffix);
+
+// Clear function variables list
+void symtable_clear_function_vars(t_symtable *ifj_table);
 
 #endif // SYMTABLE_H

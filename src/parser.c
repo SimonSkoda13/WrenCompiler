@@ -297,6 +297,10 @@ void func()
         t_param_list empty_params = {.count = 0};
         generate_function_start(func_name, mangled_name, &empty_params); // true = getter
 
+        // Start collecting function variables and buffering body
+        symtable_start_function(parser.symtable);
+        start_function_body_buffering();
+
         // Vstúpime do nového scope pre lokálne premenné gettera
         symtable_enter_scope(parser.symtable);
 
@@ -308,6 +312,9 @@ void func()
 
         // Opustíme scope
         symtable_exit_scope(parser.symtable);
+
+        // End buffering and generate all DEFVARs + body
+        end_function_body_buffering();
 
         generate_function_end(func_name);
         free(mangled_name);
@@ -352,6 +359,10 @@ void func()
         generate_function_start(func_name, mangled_name, &setter_params); // false = nie getter
         free(mangled_name);
 
+        // Start collecting function variables and buffering body
+        symtable_start_function(parser.symtable);
+        start_function_body_buffering();
+
         // Vstúpime do nového scope pre lokálne premenné settera
         symtable_enter_scope(parser.symtable);
 
@@ -372,6 +383,9 @@ void func()
 
         // Opustíme scope
         symtable_exit_scope(parser.symtable);
+
+        // End buffering and generate all DEFVARs + body
+        end_function_body_buffering();
 
         generate_function_end(func_name);
         return;
@@ -427,39 +441,28 @@ void func()
                         func_name, parser.scanner->line);
     }
 
-    // Ak je to funkcia main, presmerujeme výstup do bufferu
-    if (strcmp(func_name, "main") == 0)
+    // Vygenerujeme začiatok funkcie (LABEL, CREATEFRAME, PUSHFRAME)
+    generate_function_start(func_name, mangled_name, &params);
+
+    // Start collecting function variables and buffering body
+    symtable_start_function(parser.symtable);
+    start_function_body_buffering();
+
+    // Vstúpime do nového scope pre lokálne premenné funkcie
+    symtable_enter_scope(parser.symtable);
+
+    // Nastavíme nesting level na 0 pre parametre
+    parser.symtable->ifj_current_nesting = 0;
+
+    // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné (nesting=0)
+    for (int i = 0; i < params.count; i++)
     {
-        main_output_buffer = tmpfile();
-        if (main_output_buffer == NULL)
+        bool param_success = symtable_insert_var(parser.symtable, params.names[i],
+                                                 SYM_VAR_LOCAL, TYPE_UNKNOWN);
+        if (!param_success)
         {
             exit_with_error(ERR_INTERNAL,
-                            "Internal error: Failed to create temporary buffer for main function");
-        }
-
-        // Uložíme pôvodný stdout a presmerujeme na buffer
-        FILE *original_stdout = stdout;
-        stdout = main_output_buffer;
-        is_generating_main = true;
-
-        // Vygenerujeme začiatok funkcie (LABEL, CREATEFRAME, PUSHFRAME)
-        generate_function_start(func_name, mangled_name, &params); // false = nie getter
-
-        // Vstúpime do nového scope pre lokálne premenné funkcie
-        symtable_enter_scope(parser.symtable);
-
-        // Nastavíme nesting level na 0 pre parametre
-        parser.symtable->ifj_current_nesting = 0;
-
-        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné (nesting=0)
-        for (int i = 0; i < params.count; i++)
-        {
-            bool param_success = symtable_insert_var(parser.symtable, params.names[i],
-                                                     SYM_VAR_LOCAL, TYPE_UNKNOWN);
-            if (!param_success)
-            {
-                exit_with_error(ERR_INTERNAL,
-                                "Internal error: Failed to insert parameter '%s' into symbol table at line %d",
+                            "Internal error: Failed to insert parameter '%s' into symbol table at line %d",
                                 params.names[i], parser.scanner->line);
             }
         }
@@ -469,47 +472,11 @@ void func()
         // Opustíme scope a vyčistíme lokálne premenné
         symtable_exit_scope(parser.symtable);
 
-        // Vygenerujeme koniec funkcie (POPFRAME, RETURN)
-        generate_function_end(func_name);
-
-        // Obnovíme stdout
-        stdout = original_stdout;
-        is_generating_main = false;
-
-        free(mangled_name);
-    }
-    else
-    {
-        // Pre ostatné funkcie generujeme priamo
-        generate_function_start(func_name, mangled_name, &params);
-
-        // Vstúpime do nového scope pre lokálne premenné funkcie
-        symtable_enter_scope(parser.symtable);
-
-        // Nastavíme nesting level na 0 pre parametre
-        parser.symtable->ifj_current_nesting = 0;
-
-        // Vložíme parametre funkcie do symboltabuľky ako lokálne premenné (nesting=0)
-        for (int i = 0; i < params.count; i++)
-        {
-            bool param_success = symtable_insert_var(parser.symtable, params.names[i],
-                                                     SYM_VAR_LOCAL, TYPE_UNKNOWN);
-            if (!param_success)
-            {
-                exit_with_error(ERR_INTERNAL,
-                                "Internal error: Failed to insert parameter '%s' into symbol table at line %d",
-                                params.names[i], parser.scanner->line);
-            }
-        }
-
-        block();
-
-        // Opustíme scope a vyčistíme lokálne premenné
-        symtable_exit_scope(parser.symtable);
+        // End buffering and generate all DEFVARs + body
+        end_function_body_buffering();
 
         generate_function_end(func_name);
         free(mangled_name);
-    }
 }
 
 void param_list(t_param_list *params)
@@ -826,8 +793,8 @@ void assign()
 
         // Declare result variable first
         t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, var_name);
-        int nesting = (var_node && var_node->ifj_sym_type == SYM_VAR_LOCAL) ? var_node->ifj_data.ifj_var.ifj_nesting_level : 0;
-        const char *result_var_name = get_var_name_with_nesting(var_name, nesting);
+        int block_id = (var_node && var_node->ifj_sym_type == SYM_VAR_LOCAL) ? var_node->ifj_data.ifj_var.ifj_block_id : 0;
+        const char *result_var_name = get_var_name_with_nesting(var_name, block_id);
         char result_var[512];
         snprintf(result_var, sizeof(result_var), "LF@%s", result_var_name);
 
@@ -1478,6 +1445,7 @@ void parse_program()
 {
     prolog();
     generate_header();
+    generate_builtin_function_definitions();
     program();
     next_token();
     eols();

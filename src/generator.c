@@ -6,14 +6,24 @@
  *   - Martin Michálik (xmicham00)
  */
 
+#define _GNU_SOURCE
 #include "generator.h"
 #include "symtable.h"
+#include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 
 // Globálna premenná pre prístup k tabuľke symbolov pri generovaní kódu
 static t_symtable *global_symtable = NULL;
 
 // Počítadlo pre unikátne labely pre if/while konštrukcie
 static int ifj_label_counter = 0;
+
+// Buffer for function body code generation
+static char *function_body_buffer = NULL;
+static size_t function_body_buffer_size = 0;
+static FILE *function_body_stream = NULL;
+static FILE *original_stdout = NULL;
 
 void generator_set_symtable(t_symtable *ifj_symtable)
 {
@@ -28,6 +38,50 @@ t_symtable *get_global_symtable()
 int get_next_label_id()
 {
     return ifj_label_counter++;
+}
+
+void start_function_body_buffering()
+{
+    // Save original stdout
+    original_stdout = stdout;
+    
+    // Open memory stream for buffering
+    function_body_stream = open_memstream(&function_body_buffer, &function_body_buffer_size);
+    if (function_body_stream == NULL)
+    {
+        exit_with_error(ERR_INTERNAL, "Failed to create memory stream for function body");
+    }
+    
+    // Redirect stdout to buffer
+    stdout = function_body_stream;
+}
+
+void end_function_body_buffering()
+{
+    if (function_body_stream == NULL)
+    {
+        return;
+    }
+    
+    // Flush and close the memory stream
+    fflush(function_body_stream);
+    fclose(function_body_stream);
+    function_body_stream = NULL;
+    
+    // Restore original stdout
+    stdout = original_stdout;
+    
+    // Now generate all DEFVARs first
+    generate_all_function_defvars();
+    
+    // Then output the buffered function body
+    if (function_body_buffer != NULL && function_body_buffer_size > 0)
+    {
+        fwrite(function_body_buffer, 1, function_body_buffer_size, stdout);
+        free(function_body_buffer);
+        function_body_buffer = NULL;
+        function_body_buffer_size = 0;
+    }
 }
 
 int must_escape(unsigned char c)
@@ -172,18 +226,18 @@ char *mangle_setter_name(const char *setter_name)
 
 // Generate unique variable name with nesting level
 // Returns pointer to static buffer - not thread safe but OK for single-threaded compiler
-const char *get_var_name_with_nesting(const char *var_name, int nesting_level)
+const char *get_var_name_with_nesting(const char *var_name, int block_id)
 {
     static char buffer[256];
-    if (nesting_level == 0)
+    if (block_id == 0)
     {
-        // Parameters have no suffix
+        // Parameters (block_id=0) have no suffix
         snprintf(buffer, sizeof(buffer), "%s", var_name);
     }
     else
     {
-        // Nested variables get suffix with nesting level
-        snprintf(buffer, sizeof(buffer), "%s$n%d", var_name, nesting_level);
+        // Block variables get suffix with block ID
+        snprintf(buffer, sizeof(buffer), "%s$b%d", var_name, block_id);
     }
     return buffer;
 }
@@ -223,8 +277,8 @@ void builtin_write_var(char *var_id)
     t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_id);
     if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
     {
-        int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-        const char *unique_name = get_var_name_with_nesting(var_id, nesting);
+        int block_id = var_node->ifj_data.ifj_var.ifj_block_id;
+        const char *unique_name = get_var_name_with_nesting(var_id, block_id);
         printf("WRITE LF@%s\n", unique_name);
     }
     else if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
@@ -241,10 +295,16 @@ void builtin_write_var(char *var_id)
 
 void generate_var_declaration(const char *var_name)
 {
-    // Get nesting level from global symtable
-    int nesting = global_symtable->ifj_current_nesting;
-    const char *unique_name = get_var_name_with_nesting(var_name, nesting);
-    printf("DEFVAR LF@%s\n", unique_name);
+    // Get block ID from current block on stack (or 0 if no block)
+    int block_id = 0;
+    if (global_symtable->ifj_block_stack_top > 0)
+    {
+        block_id = global_symtable->ifj_block_stack[global_symtable->ifj_block_stack_top - 1];
+    }
+    const char *unique_name = get_var_name_with_nesting(var_name, block_id);
+    
+    // Add to function's variable list instead of generating DEFVAR immediately
+    symtable_add_function_var(global_symtable, unique_name);
 }
 
 void generate_function_start(const char *func_name, const char *mangled_name, t_param_list *params)
@@ -274,6 +334,23 @@ void generate_function_start(const char *func_name, const char *mangled_name, t_
     for (int i = params->count - 1; i >= 0; i--)
     {
         printf("POPS LF@%s\n", params->names[i]);
+    }
+}
+
+void generate_all_function_defvars()
+{
+    if (global_symtable == NULL)
+    {
+        return;
+    }
+    
+    // Generate DEFVAR for all collected function variables
+    for (int i = 0; i < global_symtable->ifj_function_vars_count; i++)
+    {
+        if (global_symtable->ifj_function_vars[i] != NULL)
+        {
+            printf("DEFVAR LF@%s\n", global_symtable->ifj_function_vars[i]);
+        }
     }
 }
 
@@ -363,12 +440,12 @@ void generate_push_float_literal(double value)
 
 void generate_push_variable(const char *var_name)
 {
-    // Nájdeme premennú s najvyšším nesting levelom
+    // Nájdeme premennú viditeľnú z aktuálneho bloku
     t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
     if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
     {
-        int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-        const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+        int block_id = var_node->ifj_data.ifj_var.ifj_block_id;
+        const char *unique_name = get_var_name_with_nesting(var_name, block_id);
         printf("PUSHS LF@%s\n", unique_name);
     }
     else
@@ -418,12 +495,12 @@ void generate_setter_call(const char *setter_name)
 void generate_move_retval_to_var(const char *var_name)
 {
     // Po návrate z funkcie je návratová hodnota na zásobníku
-    // Nájdeme premennú s najvyšším nesting levelom
+    // Nájdeme premennú viditeľnú z aktuálneho bloku
     t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
     if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
     {
-        int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-        const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+        int block_id = var_node->ifj_data.ifj_var.ifj_block_id;
+        const char *unique_name = get_var_name_with_nesting(var_name, block_id);
         printf("POPS LF@%s\n", unique_name);
     }
     else
@@ -512,12 +589,12 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
     case IDENTIFIER:
     case GLOBAL_VAR:
     {
-        // Nájdeme premennú s najvyšším nesting levelom
+        // Nájdeme premennú viditeľnú z aktuálneho bloku
         t_avl_node *var_node = symtable_search_var_scoped(global_symtable, node->token->value.string);
         if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
         {
-            int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-            const char *unique_name = get_var_name_with_nesting(node->token->value.string, nesting);
+            int block_id = var_node->ifj_data.ifj_var.ifj_block_id;
+            const char *unique_name = get_var_name_with_nesting(node->token->value.string, block_id);
             snprintf(result, result_size, "LF@%s", unique_name);
         }
         else
@@ -527,6 +604,18 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
         }
         break;
     }
+    case KEYWORD:
+        // Handle null keyword
+        if (node->token->value.keyword == KW_NULL_TYPE ||
+            node->token->value.keyword == KW_NULL_INST)
+        {
+            snprintf(result, result_size, "nil@nil");
+        }
+        else
+        {
+            result[0] = '\0';
+        }
+        break;
     default:
         result[0] = '\0';
         break;
@@ -552,8 +641,10 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
                 // Bol to getter - vygeneroval sa CALL, výsledok je na zásobníku
                 // Musíme ho popnúť do dočasnej premennej
                 int tmp_num = get_next_temp_var();
+                char temp_name[32];
+                snprintf(temp_name, sizeof(temp_name), "__tmp%d", tmp_num);
+                symtable_add_function_var(global_symtable, temp_name);
                 snprintf(result_var, result_var_size, "LF@__tmp%d", tmp_num);
-                printf("DEFVAR %s\n", result_var);
                 printf("POPS %s\n", result_var);
                 return 0;
             }
@@ -579,7 +670,10 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
             int temp_num = get_next_temp_var();
             char temp_name[256];
             snprintf(temp_name, sizeof(temp_name), "LF@__tmp%d", temp_num);
-            printf("DEFVAR %s\n", temp_name);
+            // Add to function vars list instead of immediate DEFVAR
+            char temp_name_no_prefix[32];
+            snprintf(temp_name_no_prefix, sizeof(temp_name_no_prefix), "__tmp%d", temp_num);
+            symtable_add_function_var(global_symtable, temp_name_no_prefix);
             printf("MOVE %s %s\n", temp_name, left_var);
             strncpy(left_var, temp_name, sizeof(left_var) - 1);
         }
@@ -596,7 +690,10 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
             int temp_num = get_next_temp_var();
             char temp_name[256];
             snprintf(temp_name, sizeof(temp_name), "LF@__tmp%d", temp_num);
-            printf("DEFVAR %s\n", temp_name);
+            // Add to function vars list instead of immediate DEFVAR
+            char temp_name_no_prefix[32];
+            snprintf(temp_name_no_prefix, sizeof(temp_name_no_prefix), "__tmp%d", temp_num);
+            symtable_add_function_var(global_symtable, temp_name_no_prefix);
             printf("MOVE %s %s\n", temp_name, right_var);
             strncpy(right_var, temp_name, sizeof(right_var) - 1);
         }
@@ -605,47 +702,104 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     // Vytvoríme premennú pre výsledok tejto operácie
     int result_temp_num = get_next_temp_var();
     snprintf(result_var, result_var_size, "LF@__tmp%d", result_temp_num);
-    printf("DEFVAR %s\n", result_var);
+    // Add to function vars list instead of immediate DEFVAR
+    char result_temp_name_no_prefix[32];
+    snprintf(result_temp_name_no_prefix, sizeof(result_temp_name_no_prefix), "__tmp%d", result_temp_num);
+    symtable_add_function_var(global_symtable, result_temp_name_no_prefix);
 
     // Vygenerujeme inštrukciu podľa typu operátora
     switch (node->token->type)
     {
     case OP_ADD:
-        printf("ADD %s %s %s\n", result_var, left_var, right_var);
-        break;
     case OP_SUB:
-        printf("SUB %s %s %s\n", result_var, left_var, right_var);
-        break;
     case OP_MUL:
-        printf("MUL %s %s %s\n", result_var, left_var, right_var);
-        break;
     case OP_DIV:
-        printf("DIV %s %s %s\n", result_var, left_var, right_var);
-        break;
     case OP_LESS_THAN:
-        printf("LT %s %s %s\n", result_var, left_var, right_var);
-        break;
     case OP_GREATER_THAN:
-        printf("GT %s %s %s\n", result_var, left_var, right_var);
-        break;
     case OP_EQUALS:
-        printf("EQ %s %s %s\n", result_var, left_var, right_var);
-        break;
     case OP_NOT_EQUALS:
-        // NEQ = NOT(EQ)
-        printf("EQ %s %s %s\n", result_var, left_var, right_var);
-        printf("NOT %s %s\n", result_var, result_var);
-        break;
     case OP_LESS_EQUAL:
-        // LE = NOT(GT)
-        printf("GT %s %s %s\n", result_var, left_var, right_var);
-        printf("NOT %s %s\n", result_var, result_var);
-        break;
     case OP_GREATER_THAN_EQUAL:
-        // GE = NOT(LT)
-        printf("LT %s %s %s\n", result_var, left_var, right_var);
-        printf("NOT %s %s\n", result_var, result_var);
+    {
+        // For arithmetic and comparison operations, always convert both operands to float
+        int type_tmp = get_next_temp_var();
+        char left_conv[64], right_conv[64], left_type[64], right_type[64];
+        snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", type_tmp);
+        snprintf(right_conv, sizeof(right_conv), "__conv_right_%d", type_tmp);
+        snprintf(left_type, sizeof(left_type), "__type_left_%d", type_tmp);
+        snprintf(right_type, sizeof(right_type), "__type_right_%d", type_tmp);
+        symtable_add_function_var(global_symtable, left_conv);
+        symtable_add_function_var(global_symtable, right_conv);
+        symtable_add_function_var(global_symtable, left_type);
+        symtable_add_function_var(global_symtable, right_type);
+        
+        // Convert left operand to float if it's int
+        printf("MOVE LF@%s %s\n", left_conv, left_var);
+        printf("TYPE LF@%s LF@%s\n", left_type, left_conv);
+        printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", type_tmp, left_type);
+        printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", type_tmp, left_type);
+        printf("JUMP $$conv_left_done_%d\n", type_tmp);
+        printf("LABEL $$conv_left_is_int_%d\n", type_tmp);
+        printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
+        printf("LABEL $$conv_left_done_%d\n", type_tmp);
+        
+        // Convert right operand to float if it's int
+        printf("MOVE LF@%s %s\n", right_conv, right_var);
+        printf("TYPE LF@%s LF@%s\n", right_type, right_conv);
+        printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", type_tmp, right_type);
+        printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", type_tmp, right_type);
+        printf("JUMP $$conv_right_done_%d\n", type_tmp);
+        printf("LABEL $$conv_right_is_int_%d\n", type_tmp);
+        printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
+        printf("LABEL $$conv_right_done_%d\n", type_tmp);
+        
+        // Now perform the operation with converted operands
+        if (node->token->type == OP_ADD)
+        {
+            printf("ADD %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        }
+        else if (node->token->type == OP_SUB)
+        {
+            printf("SUB %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        }
+        else if (node->token->type == OP_MUL)
+        {
+            printf("MUL %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        }
+        else if (node->token->type == OP_DIV)
+        {
+            printf("DIV %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        }
+        else if (node->token->type == OP_LESS_THAN)
+        {
+            printf("LT %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        }
+        else if (node->token->type == OP_GREATER_THAN)
+        {
+            printf("GT %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        }
+        else if (node->token->type == OP_EQUALS)
+        {
+            printf("EQ %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        }
+        else if (node->token->type == OP_NOT_EQUALS)
+        {
+            printf("EQ %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+            printf("NOT %s %s\n", result_var, result_var);
+        }
+        else if (node->token->type == OP_LESS_EQUAL)
+        {
+            printf("GT %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+            printf("NOT %s %s\n", result_var, result_var);
+        }
+        else if (node->token->type == OP_GREATER_THAN_EQUAL)
+        {
+            printf("LT %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+            printf("NOT %s %s\n", result_var, result_var);
+        }
+        
         break;
+    }
     default:
         return ERR_INTERNAL;
     }
@@ -660,15 +814,20 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
         exit_with_error(ERR_INTERNAL, "Internal error: NULL AST in generate_assignment");
     }
 
-    // Nájdeme premennú s najvyšším nesting levelom
+    // Nájdeme premennú viditeľnú z aktuálneho bloku
     t_avl_node *var_node = symtable_search_var_scoped(global_symtable, var_name);
     if (var_node == NULL)
     {
         exit_with_error(ERR_INTERNAL, "Internal error: Variable '%s' not found in symbol table", var_name);
     }
 
-    int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-    const char *unique_name = get_var_name_with_nesting(var_name, nesting);
+    int block_id = var_node->ifj_data.ifj_var.ifj_block_id;
+    const char *temp_name = get_var_name_with_nesting(var_name, block_id);
+    
+    // IMPORTANT: Copy to local buffer because get_var_name_with_nesting uses static buffer
+    char unique_name[256];
+    strncpy(unique_name, temp_name, sizeof(unique_name) - 1);
+    unique_name[sizeof(unique_name) - 1] = '\0';
 
     // Ak je to jednoduchý literál alebo premenná, priamo priradíme
     if (ast->left == NULL && ast->right == NULL)
@@ -720,29 +879,18 @@ void generate_if_start(t_ast_node *condition_ast, int label_id)
     }
 
     // Uložíme výsledok podmienky do temporary premennej
-    printf("DEFVAR TF@%%if_cond_%d\n", label_id);
-    printf("MOVE TF@%%if_cond_%d %s\n", label_id, result_var);
+    printf("DEFVAR GF@%%if_cond_%d\n", label_id);
+    printf("MOVE GF@%%if_cond_%d %s\n", label_id, result_var);
 
     // Kontrola pravdivosti podľa zadania:
     // - null = false -> skok na else
     // - bool@false = false -> skok na else
     // - všetko ostatné = true -> pokračujeme do then vetvy
 
-    printf("JUMPIFEQ $$if_else_%d TF@%%if_cond_%d nil@nil\n", label_id, label_id);
-    printf("JUMPIFEQ $$if_else_%d TF@%%if_cond_%d bool@false\n", label_id, label_id);
+    printf("JUMPIFEQ $$if_else_%d GF@%%if_cond_%d nil@nil\n", label_id, label_id);
+    printf("JUMPIFEQ $$if_else_%d GF@%%if_cond_%d bool@false\n", label_id, label_id);
 
     // Ak podmienka je true, pokračujeme do then bloku (LABEL nasleduje)
-}
-
-/**
- * @brief Generuje label pre then vetvu
- * @param label_id Unikátne ID pre labely
- */
-void generate_if_then(int label_id)
-{
-    // Then blok začína tu (kód then bloku bude vygenerovaný parserom)
-    // Na konci then bloku musíme preskočiť else vetvu
-    (void)label_id; // Then blok je default flow, nepotrebujeme label
 }
 
 /**
@@ -792,13 +940,17 @@ void generate_while_condition(t_ast_node *condition_ast, int label_id)
         exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate while condition");
     }
 
+    // Create temporary variable for condition (will be added to function vars list)
+    char cond_var_name[64];
+    snprintf(cond_var_name, sizeof(cond_var_name), "__while_cond_%d", label_id);
+    symtable_add_function_var(global_symtable, cond_var_name);
+
     // Uložíme výsledok podmienky
-    printf("DEFVAR TF@%%while_cond_%d\n", label_id);
-    printf("MOVE TF@%%while_cond_%d %s\n", label_id, result_var);
+    printf("MOVE LF@%s %s\n", cond_var_name, result_var);
 
     // Kontrola pravdivosti - ak je false alebo null, opustime cyklus
-    printf("JUMPIFEQ $$while_end_%d TF@%%while_cond_%d nil@nil\n", label_id, label_id);
-    printf("JUMPIFEQ $$while_end_%d TF@%%while_cond_%d bool@false\n", label_id, label_id);
+    printf("JUMPIFEQ $$while_end_%d LF@%s nil@nil\n", label_id, cond_var_name);
+    printf("JUMPIFEQ $$while_end_%d LF@%s bool@false\n", label_id, cond_var_name);
 
     // Ak podmienka je true, pokračujeme do tela cyklu (kód nasleduje)
 }
@@ -814,4 +966,262 @@ void generate_while_end(int label_id)
 
     // Label pre koniec cyklu
     printf("LABEL $$while_end_%d\n", label_id);
+}
+
+/**
+ * @brief Generuje definície všetkých builtin funkcií ako callable subroutines
+ */
+void generate_builtin_function_definitions()
+{
+    // floor(x) - int or float -> int
+    printf("\n# Builtin function: floor\n");
+    printf("LABEL $$__builtin_floor\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+    printf("DEFVAR LF@%%param\n");
+    printf("DEFVAR LF@%%result\n");
+    printf("DEFVAR LF@%%type\n");
+    printf("POPS LF@%%param\n");
+    printf("TYPE LF@%%type LF@%%param\n");
+    printf("JUMPIFEQ $$floor_is_int LF@%%type string@int\n");
+    printf("JUMPIFEQ $$floor_is_float LF@%%type string@float\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$floor_is_int\n");
+    printf("MOVE LF@%%result LF@%%param\n");
+    printf("JUMP $$floor_end\n");
+    printf("LABEL $$floor_is_float\n");
+    printf("FLOAT2INT LF@%%result LF@%%param\n");
+    printf("LABEL $$floor_end\n");
+    printf("PUSHS LF@%%result\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+
+    // str(x) - any -> string
+    printf("\n# Builtin function: str\n");
+    printf("LABEL $$__builtin_str\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+    printf("DEFVAR LF@%%param\n");
+    printf("DEFVAR LF@%%result\n");
+    printf("DEFVAR LF@%%type\n");
+    printf("POPS LF@%%param\n");
+    printf("TYPE LF@%%type LF@%%param\n");
+    printf("JUMPIFEQ $$str_is_string LF@%%type string@string\n");
+    printf("JUMPIFEQ $$str_is_int LF@%%type string@int\n");
+    printf("JUMPIFEQ $$str_is_float LF@%%type string@float\n");
+    printf("JUMPIFEQ $$str_is_bool LF@%%type string@bool\n");
+    printf("JUMPIFEQ $$str_is_nil LF@%%type string@nil\n");
+    printf("EXIT int@99\n");  // Unknown type
+    printf("LABEL $$str_is_string\n");
+    printf("MOVE LF@%%result LF@%%param\n");
+    printf("JUMP $$str_end\n");
+    printf("LABEL $$str_is_int\n");
+    printf("INT2STR LF@%%result LF@%%param\n");
+    printf("JUMP $$str_end\n");
+    printf("LABEL $$str_is_float\n");
+    // Check if float is whole number
+    printf("DEFVAR LF@%%isint\n");
+    printf("DEFVAR LF@%%temp\n");
+    printf("ISINT LF@%%isint LF@%%param\n");
+    printf("JUMPIFEQ $$str_float_is_int LF@%%isint bool@true\n");
+    // Not whole number, use float to string
+    printf("FLOAT2STR LF@%%result LF@%%param\n");
+    printf("JUMP $$str_end\n");
+    printf("LABEL $$str_float_is_int\n");
+    // Whole number, convert to int then to string
+    printf("FLOAT2INT LF@%%temp LF@%%param\n");
+    printf("INT2STR LF@%%result LF@%%temp\n");
+    printf("JUMP $$str_end\n");
+    printf("LABEL $$str_is_bool\n");
+    printf("JUMPIFEQ $$str_bool_true LF@%%param bool@true\n");
+    printf("MOVE LF@%%result string@false\n");
+    printf("JUMP $$str_end\n");
+    printf("LABEL $$str_bool_true\n");
+    printf("MOVE LF@%%result string@true\n");
+    printf("JUMP $$str_end\n");
+    printf("LABEL $$str_is_nil\n");
+    printf("MOVE LF@%%result string@null\n");
+    printf("LABEL $$str_end\n");
+    printf("PUSHS LF@%%result\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+
+    // length(s) - string -> int
+    printf("\n# Builtin function: length\n");
+    printf("LABEL $$__builtin_length\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+    printf("DEFVAR LF@%%param\n");
+    printf("DEFVAR LF@%%result\n");
+    printf("DEFVAR LF@%%type\n");
+    printf("POPS LF@%%param\n");
+    printf("TYPE LF@%%type LF@%%param\n");
+    printf("JUMPIFEQ $$length_ok LF@%%type string@string\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$length_ok\n");
+    printf("STRLEN LF@%%result LF@%%param\n");
+    printf("PUSHS LF@%%result\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+
+    // chr(i) - int -> string
+    printf("\n# Builtin function: chr\n");
+    printf("LABEL $$__builtin_chr\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+    printf("DEFVAR LF@%%param\n");
+    printf("DEFVAR LF@%%result\n");
+    printf("DEFVAR LF@%%type\n");
+    printf("POPS LF@%%param\n");
+    printf("TYPE LF@%%type LF@%%param\n");
+    printf("JUMPIFEQ $$chr_ok LF@%%type string@int\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$chr_ok\n");
+    printf("INT2CHAR LF@%%result LF@%%param\n");
+    printf("PUSHS LF@%%result\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+
+    // strcmp(s1, s2) - string, string -> int
+    printf("\n# Builtin function: strcmp\n");
+    printf("LABEL $$__builtin_strcmp\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+    printf("DEFVAR LF@%%param1\n");
+    printf("DEFVAR LF@%%param2\n");
+    printf("DEFVAR LF@%%result\n");
+    printf("DEFVAR LF@%%type1\n");
+    printf("DEFVAR LF@%%type2\n");
+    printf("POPS LF@%%param2\n");  // Pop in reverse order
+    printf("POPS LF@%%param1\n");
+    printf("TYPE LF@%%type1 LF@%%param1\n");
+    printf("TYPE LF@%%type2 LF@%%param2\n");
+    printf("JUMPIFEQ $$strcmp_type1_ok LF@%%type1 string@string\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$strcmp_type1_ok\n");
+    printf("JUMPIFEQ $$strcmp_type2_ok LF@%%type2 string@string\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$strcmp_type2_ok\n");
+    printf("LT LF@%%result LF@%%param1 LF@%%param2\n");
+    printf("JUMPIFEQ $$strcmp_less LF@%%result bool@true\n");
+    printf("GT LF@%%result LF@%%param1 LF@%%param2\n");
+    printf("JUMPIFEQ $$strcmp_greater LF@%%result bool@true\n");
+    printf("MOVE LF@%%result int@0\n");
+    printf("JUMP $$strcmp_end\n");
+    printf("LABEL $$strcmp_less\n");
+    printf("MOVE LF@%%result int@-1\n");
+    printf("JUMP $$strcmp_end\n");
+    printf("LABEL $$strcmp_greater\n");
+    printf("MOVE LF@%%result int@1\n");
+    printf("LABEL $$strcmp_end\n");
+    printf("PUSHS LF@%%result\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+
+    // ord(s, i) - string, int -> int or null
+    printf("\n# Builtin function: ord\n");
+    printf("LABEL $$__builtin_ord\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+    printf("DEFVAR LF@%%param1\n");
+    printf("DEFVAR LF@%%param2\n");
+    printf("DEFVAR LF@%%result\n");
+    printf("DEFVAR LF@%%type1\n");
+    printf("DEFVAR LF@%%type2\n");
+    printf("DEFVAR LF@%%len\n");
+    printf("DEFVAR LF@%%cmp\n");
+    printf("POPS LF@%%param2\n");  // Pop in reverse order
+    printf("POPS LF@%%param1\n");
+    printf("TYPE LF@%%type1 LF@%%param1\n");
+    printf("TYPE LF@%%type2 LF@%%param2\n");
+    printf("JUMPIFEQ $$ord_type1_ok LF@%%type1 string@string\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$ord_type1_ok\n");
+    printf("JUMPIFEQ $$ord_type2_ok LF@%%type2 string@int\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$ord_type2_ok\n");
+    printf("STRLEN LF@%%len LF@%%param1\n");
+    printf("LT LF@%%cmp LF@%%param2 int@0\n");
+    printf("JUMPIFEQ $$ord_null LF@%%cmp bool@true\n");
+    printf("LT LF@%%cmp LF@%%param2 LF@%%len\n");
+    printf("JUMPIFEQ $$ord_ok LF@%%cmp bool@true\n");
+    printf("LABEL $$ord_null\n");
+    printf("PUSHS nil@nil\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+    printf("LABEL $$ord_ok\n");
+    printf("STRI2INT LF@%%result LF@%%param1 LF@%%param2\n");
+    printf("PUSHS LF@%%result\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+
+    // substring(s, i, j) - string, int, int -> string or null
+    printf("\n# Builtin function: substring\n");
+    printf("LABEL $$__builtin_substring\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+    printf("DEFVAR LF@%%param1\n");
+    printf("DEFVAR LF@%%param2\n");
+    printf("DEFVAR LF@%%param3\n");
+    printf("DEFVAR LF@%%result\n");
+    printf("DEFVAR LF@%%type1\n");
+    printf("DEFVAR LF@%%type2\n");
+    printf("DEFVAR LF@%%type3\n");
+    printf("DEFVAR LF@%%len\n");
+    printf("DEFVAR LF@%%cmp\n");
+    printf("DEFVAR LF@%%idx\n");
+    printf("DEFVAR LF@%%char\n");
+    printf("POPS LF@%%param3\n");  // Pop in reverse order
+    printf("POPS LF@%%param2\n");
+    printf("POPS LF@%%param1\n");
+    printf("TYPE LF@%%type1 LF@%%param1\n");
+    printf("TYPE LF@%%type2 LF@%%param2\n");
+    printf("TYPE LF@%%type3 LF@%%param3\n");
+    printf("JUMPIFEQ $$substring_type1_ok LF@%%type1 string@string\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$substring_type1_ok\n");
+    printf("JUMPIFEQ $$substring_type2_ok LF@%%type2 string@int\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$substring_type2_ok\n");
+    printf("JUMPIFEQ $$substring_type3_ok LF@%%type3 string@int\n");
+    printf("EXIT int@25\n");  // Type error
+    printf("LABEL $$substring_type3_ok\n");
+    printf("STRLEN LF@%%len LF@%%param1\n");
+    // Check if i < 0 or j < 0 or i > j or i >= len
+    printf("LT LF@%%cmp LF@%%param2 int@0\n");
+    printf("JUMPIFEQ $$substring_null LF@%%cmp bool@true\n");
+    printf("LT LF@%%cmp LF@%%param3 int@0\n");
+    printf("JUMPIFEQ $$substring_null LF@%%cmp bool@true\n");
+    printf("GT LF@%%cmp LF@%%param2 LF@%%param3\n");
+    printf("JUMPIFEQ $$substring_null LF@%%cmp bool@true\n");
+    printf("GT LF@%%cmp LF@%%param2 LF@%%len\n");
+    printf("JUMPIFEQ $$substring_null LF@%%cmp bool@true\n");
+    printf("EQ LF@%%cmp LF@%%param2 LF@%%len\n");
+    printf("JUMPIFEQ $$substring_null LF@%%cmp bool@true\n");
+    // Adjust j if j > len
+    printf("GT LF@%%cmp LF@%%param3 LF@%%len\n");
+    printf("JUMPIFEQ $$substring_adjust_j LF@%%cmp bool@true\n");
+    printf("JUMP $$substring_loop_init\n");
+    printf("LABEL $$substring_adjust_j\n");
+    printf("MOVE LF@%%param3 LF@%%len\n");
+    printf("LABEL $$substring_loop_init\n");
+    printf("MOVE LF@%%result string@\n");
+    printf("MOVE LF@%%idx LF@%%param2\n");
+    printf("LABEL $$substring_loop\n");
+    printf("LT LF@%%cmp LF@%%idx LF@%%param3\n");
+    printf("JUMPIFEQ $$substring_loop_body LF@%%cmp bool@true\n");
+    printf("JUMP $$substring_end\n");
+    printf("LABEL $$substring_loop_body\n");
+    printf("GETCHAR LF@%%char LF@%%param1 LF@%%idx\n");
+    printf("CONCAT LF@%%result LF@%%result LF@%%char\n");
+    printf("ADD LF@%%idx LF@%%idx int@1\n");
+    printf("JUMP $$substring_loop\n");
+    printf("LABEL $$substring_null\n");
+    printf("PUSHS nil@nil\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
+    printf("LABEL $$substring_end\n");
+    printf("PUSHS LF@%%result\n");
+    printf("POPFRAME\n");
+    printf("RETURN\n");
 }

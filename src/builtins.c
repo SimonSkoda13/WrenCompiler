@@ -4,6 +4,7 @@
  *
  * Autori:
  *   - Matúš Magyar (xmagyam00)
+ *   - Martin Michálik (xmicham00)
  */
 
 #include "builtins.h"
@@ -60,13 +61,13 @@ static void get_param_value(t_ast_node *node, char *result, size_t result_size)
 
     case IDENTIFIER:
     {
-        // Need to check nesting level for local variables
+        // Need to check block ID for local variables
         // Use the generator function that handles this
         t_avl_node *var_node = symtable_search_var_scoped(get_global_symtable(), node->token->value.string);
         if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
         {
-            int nesting = var_node->ifj_data.ifj_var.ifj_nesting_level;
-            const char *unique_name = get_var_name_with_nesting(node->token->value.string, nesting);
+            int block_id = var_node->ifj_data.ifj_var.ifj_block_id;
+            const char *unique_name = get_var_name_with_nesting(node->token->value.string, block_id);
             snprintf(result, result_size, "LF@%s", unique_name);
         }
         else
@@ -121,7 +122,51 @@ void generate_builtin_write(t_ast_node *param_node)
         exit_with_error(ERR_INTERNAL, "Unsupported type in Ifj.write()");
     }
 
-    printf("WRITE %s\n", param_var);
+    // If it's a variable (starts with LF@ or GF@), check if it's float and if it's a whole number
+    if (strncmp(param_var, "LF@", 3) == 0 || strncmp(param_var, "GF@", 3) == 0 || strncmp(param_var, "TF@", 3) == 0)
+    {
+        static int write_counter = 0;
+        int label_id = write_counter++;
+        
+        t_symtable *symtable = get_global_symtable();
+        char type_var[64], temp_var[64], isint_var[64];
+        snprintf(type_var, sizeof(type_var), "__write_type_%d", label_id);
+        snprintf(temp_var, sizeof(temp_var), "__write_temp_%d", label_id);
+        snprintf(isint_var, sizeof(isint_var), "__write_isint_%d", label_id);
+        
+        if (symtable) {
+            symtable_add_function_var(symtable, type_var);
+            symtable_add_function_var(symtable, temp_var);
+            symtable_add_function_var(symtable, isint_var);
+        }
+        
+        // Check type
+        printf("TYPE LF@%s %s\n", type_var, param_var);
+        printf("JUMPIFEQ $$write_is_float_%d LF@%s string@float\n", label_id, type_var);
+        // Not float, just write it
+        printf("WRITE %s\n", param_var);
+        printf("JUMP $$write_end_%d\n", label_id);
+        
+        // It's float - check if it's a whole number using ISINT
+        printf("LABEL $$write_is_float_%d\n", label_id);
+        printf("ISINT LF@%s %s\n", isint_var, param_var);
+        printf("JUMPIFEQ $$write_convert_to_int_%d LF@%s bool@true\n", label_id, isint_var);
+        // Not a whole number, write as float
+        printf("WRITE %s\n", param_var);
+        printf("JUMP $$write_end_%d\n", label_id);
+        
+        // It's a whole number, convert to int and write
+        printf("LABEL $$write_convert_to_int_%d\n", label_id);
+        printf("FLOAT2INT LF@%s %s\n", temp_var, param_var);
+        printf("WRITE LF@%s\n", temp_var);
+        
+        printf("LABEL $$write_end_%d\n", label_id);
+    }
+    else
+    {
+        // It's a literal, just write it
+        printf("WRITE %s\n", param_var);
+    }
 }
 
 // Function to generate code for expressions (stub, to be implemented)
@@ -131,7 +176,7 @@ void generate_builtin_read_str(const char *result_var)
     {
         exit_with_error(ERR_INTERNAL, "Internal error: NULL result variable in Ifj.read_str()");
     }
-    printf("READ LF@%s string\n", result_var);
+    printf("READ %s string\n", result_var);
 }
 
 // Function to generate code for expressions (stub, to be implemented)
@@ -141,7 +186,7 @@ void generate_builtin_read_num(const char *result_var)
     {
         exit_with_error(ERR_INTERNAL, "Internal error: NULL result variable in Ifj.read_num()");
     }
-    printf("READ LF@%s float\n", result_var);
+    printf("READ %s float\n", result_var);
 }
 
 // Function to generate code for expressions (stub, to be implemented)
@@ -160,26 +205,10 @@ void generate_builtin_floor(const char *result_var, t_ast_node *param_node)
         exit_with_error(ERR_INTERNAL, "Failed to generate expression for Ifj.floor()");
     }
 
-    static int floor_counter = 0;
-    int label_id = floor_counter++;
-
-    // Runtime type check - parameter must be int or float
-    printf("DEFVAR LF@__floor_type_%d\n", label_id);
-    printf("TYPE LF@__floor_type_%d %s\n", label_id, param_var);
-    printf("JUMPIFEQ $$floor_type_int_%d LF@__floor_type_%d string@int\n", label_id, label_id);
-    printf("JUMPIFEQ $$floor_type_float_%d LF@__floor_type_%d string@float\n", label_id, label_id);
-    printf("EXIT int@25\n");
-
-    // If int, just copy the value
-    printf("LABEL $$floor_type_int_%d\n", label_id);
-    printf("MOVE %s %s\n", result_var, param_var);
-    printf("JUMP $$floor_end_%d\n", label_id);
-
-    // If float, convert to int
-    printf("LABEL $$floor_type_float_%d\n", label_id);
-    printf("FLOAT2INT %s %s\n", result_var, param_var);
-
-    printf("LABEL $$floor_end_%d\n", label_id);
+    // Call the builtin function via stack
+    printf("PUSHS %s\n", param_var);
+    printf("CALL $$__builtin_floor\n");
+    printf("POPS %s\n", result_var);
 }
 
 void generate_builtin_str(const char *result_var, t_ast_node *param_node)
@@ -205,54 +234,12 @@ void generate_builtin_str(const char *result_var, t_ast_node *param_node)
         }
     }
 
-    // Unikátne labely
-    static int str_counter = 0;
-    int label_id = str_counter++;
-
-    // Type check za behu
-    printf("# Ifj.str() - type conversion\n");
-    printf("DEFVAR LF@__str_type_%d\n", label_id);
-    printf("TYPE LF@__str_type_%d %s\n", label_id, param_var);
-
-    // String - len skopíruj
-    printf("JUMPIFEQ $$str_is_string_%d LF@__str_type_%d string@string\n",
-           label_id, label_id);
-
-    // Int - konvertuj
-    printf("JUMPIFEQ $$str_is_int_%d LF@__str_type_%d string@int\n",
-           label_id, label_id);
-
-    // Float - konvertuj
-    printf("JUMPIFEQ $$str_is_float_%d LF@__str_type_%d string@float\n",
-           label_id, label_id);
-
-    // Null - "null"
-    printf("JUMPIFEQ $$str_is_nil_%d LF@__str_type_%d string@nil\n",
-           label_id, label_id);
-
-    // === STRING PRÍPAD ===
-    printf("LABEL $$str_is_string_%d\n", label_id);
-    printf("MOVE %s %s\n", result_var, param_var);
-    printf("JUMP $$str_end_%d\n", label_id);
-
-    // === INT PRÍPAD ===
-    printf("LABEL $$str_is_int_%d\n", label_id);
-    printf("INT2STRING %s %s\n", result_var, param_var);
-    printf("JUMP $$str_end_%d\n", label_id);
-
-    // === FLOAT PRÍPAD - formát %.2f ===
-    printf("LABEL $$str_is_float_%d\n", label_id);
-    printf("FLOAT2STR %s %s\n", result_var, param_var);
-    printf("JUMP $$str_end_%d\n", label_id);
-
-    // === NULL PRÍPAD ===
-    printf("LABEL $$str_is_nil_%d\n", label_id);
-    printf("MOVE %s string@null\n", result_var);
-
-    printf("LABEL $$str_end_%d\n", label_id);
+    // Call the builtin function via stack
+    printf("PUSHS %s\n", param_var);
+    printf("CALL $$__builtin_str\n");
+    printf("POPS %s\n", result_var);
 }
 
-// Function to generate code for expressions (stub, to be implemented)
 void generate_builtin_length(const char *result_var, t_ast_node *param_node)
 {
     if (result_var == NULL || param_node == NULL)
@@ -270,20 +257,12 @@ void generate_builtin_length(const char *result_var, t_ast_node *param_node)
         generate_expression_code(param_node, param_var, sizeof(param_var));
     }
 
-    static int length_counter = 0;
-    int label_id = length_counter++;
-
-    printf("DEFVAR LF@__length_type_%d\n", label_id);
-    printf("TYPE LF@__length_type_%d %s\n", label_id, param_var);
-    printf("JUMPIFEQ $$length_type_ok_%d LF@__length_type_%d string@string\n",
-           label_id, label_id);
-    printf("EXIT int@25\n");
-    printf("LABEL $$length_type_ok_%d\n", label_id);
-
-    printf("STRLEN %s %s\n", result_var, param_var);
+    // Call the builtin function via stack
+    printf("PUSHS %s\n", param_var);
+    printf("CALL $$__builtin_length\n");
+    printf("POPS %s\n", result_var);
 }
 
-// Function to generate code for expressions (stub, to be implemented)
 void generate_builtin_chr(const char *result_var, t_ast_node *param_node)
 {
     if (result_var == NULL || param_node == NULL)
@@ -301,15 +280,10 @@ void generate_builtin_chr(const char *result_var, t_ast_node *param_node)
         generate_expression_code(param_node, param_var, sizeof(param_var));
     }
 
-    static int chr_counter = 0;
-    int label_id = chr_counter++;
-
-    printf("DEFVAR LF@__chr_type_%d\n", label_id);
-    printf("TYPE LF@__chr_type_%d %s\n", label_id, param_var);
-    printf("JUMPIFEQ $$chr_type_ok_%d LF@__chr_type_%d string@int\n", label_id, label_id);
-    printf("EXIT int@25\n");
-    printf("LABEL $$chr_type_ok_%d\n", label_id);
-    printf("INT2CHAR %s %s\n", result_var, param_var);
+    // Call the builtin function via stack
+    printf("PUSHS %s\n", param_var);
+    printf("CALL $$__builtin_chr\n");
+    printf("POPS %s\n", result_var);
 }
 
 void generate_builtin_substring(const char *result_var, t_ast_node *param_node, t_ast_node *i_node, t_ast_node *j_node)
@@ -349,81 +323,12 @@ void generate_builtin_substring(const char *result_var, t_ast_node *param_node, 
         generate_expression_code(j_node, j_var, sizeof(j_var));
     }
 
-    static int substring_counter = 0;
-    int label_id = substring_counter++;
-
-    printf("DEFVAR LF@__substr_s_type_%d\n", label_id);
-    // Kontrola typu s
-    printf("TYPE LF@__substr_s_type_%d %s\n", label_id, param_var);
-    printf("JUMPIFEQ $$substr_s_ok_%d LF@__substr_s_type_%d string@string\n", label_id, label_id);
-    printf("EXIT int@25\n");
-    printf("LABEL $$substr_s_ok_%d\n", label_id);
-
-    // Kontrola typu i
-    printf("DEFVAR LF@__substr_cmp_%d\n", label_id);
-    printf("TYPE LF@__substr_cmp_%d %s\n", label_id, i_var);
-    printf("JUMPIFEQ $$substr_i_ok_%d LF@__substr_cmp_%d string@int\n", label_id, label_id);
-    printf("EXIT int@26\n");
-    printf("LABEL $$substr_i_ok_%d\n", label_id);
-
-    // Kontrola typu j
-    printf("DEFVAR LF@__substr_j_type_%d\n", label_id);
-    printf("TYPE LF@__substr_j_type_%d %s\n", label_id, j_var);
-    printf("JUMPIFEQ $$substr_j_ok_%d LF@__substr_j_type_%d string@int\n", label_id, label_id);
-    printf("EXIT int@26\n");
-    printf("LABEL $$substr_j_ok_%d\n", label_id);
-
-    // POMOCNÉ PREMENNÉ
-    printf("DEFVAR LF@__substr_len_%d\n", label_id);
-    printf("STRLEN LF@__substr_len_%d %s\n", label_id, param_var);
-
-    // VALIDÁCIA INDEXOV PODLA ZADANIA
-    // i < 0 -> null
-    printf("LT LF@__substr_cmp_%d %s int@0\n", label_id, i_var);
-    printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@true\n", label_id, label_id);
-
-    // j < 0 -> null
-    printf("LT LF@__substr_cmp_%d %s int@0\n", label_id, j_var);
-    printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@true\n", label_id, label_id);
-
-    // i > j -> null
-    printf("GT LF@__substr_cmp_%d %s %s\n", label_id, i_var, j_var);
-    printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@true\n", label_id, label_id);
-
-    // i >= length(s) -> null (check if NOT i < length)
-    printf("LT LF@__substr_cmp_%d %s LF@__substr_len_%d\n", label_id, i_var, label_id);
-    printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@false\n", label_id, label_id);
-
-    // j > length(s) -> null
-    printf("GT LF@__substr_cmp_%d %s LF@__substr_len_%d\n", label_id, j_var, label_id);
-    printf("JUMPIFEQ $$substr_return_null_%d LF@__substr_cmp_%d bool@true\n", label_id, label_id);
-
-    // VYTVORENIE SUBSTRING
-    printf("MOVE %s string@\n", result_var); // Inicializuj na prázdny string
-    printf("DEFVAR LF@__substr_idx_%d\n", label_id);
-    printf("MOVE LF@__substr_idx_%d %s\n", label_id, i_var);
-    printf("DEFVAR LF@__substr_char_%d\n", label_id);
-
-    // Loop: od i po j-1
-    printf("LABEL $$substr_loop_%d\n", label_id);
-    printf("LT LF@__substr_cmp_%d LF@__substr_idx_%d %s\n", label_id, label_id, j_var);
-    printf("JUMPIFEQ $$substr_end_%d LF@__substr_cmp_%d bool@false\n", label_id, label_id);
-
-    // Získaj znak na indexe
-    printf("GETCHAR LF@__substr_char_%d %s LF@__substr_idx_%d\n", label_id, param_var, label_id);
-    // Pridaj znak k výsledku
-    printf("CONCAT %s %s LF@__substr_char_%d\n", result_var, result_var, label_id);
-    // Inkrementuj index
-    printf("ADD LF@__substr_idx_%d LF@__substr_idx_%d int@1\n", label_id, label_id);
-    printf("JUMP $$substr_loop_%d\n", label_id);
-
-    printf("JUMP $$substr_end_%d\n", label_id);
-
-    // RETURN NULL
-    printf("LABEL $$substr_return_null_%d\n", label_id);
-    printf("MOVE %s nil@nil\n", result_var);
-
-    printf("LABEL $$substr_end_%d\n", label_id);
+    // Call the builtin function via stack (push in order, popped in reverse)
+    printf("PUSHS %s\n", param_var);
+    printf("PUSHS %s\n", i_var);
+    printf("PUSHS %s\n", j_var);
+    printf("CALL $$__builtin_substring\n");
+    printf("POPS %s\n", result_var);
 }
 
 void generate_builtin_strcmp(const char *result_var, t_ast_node *str1_node, t_ast_node *str2_node)
@@ -453,43 +358,11 @@ void generate_builtin_strcmp(const char *result_var, t_ast_node *str1_node, t_as
         generate_expression_code(str2_node, str2_var, sizeof(str2_var));
     }
 
-    static int strcmp_counter = 0;
-    int label_id = strcmp_counter++;
-
-    // Type checking
-    printf("DEFVAR LF@__strcmp_type_%d\n", label_id);
-    printf("TYPE LF@__strcmp_type_%d %s\n", label_id, str1_var);
-    printf("JUMPIFEQ $$strcmp_s1_ok_%d LF@__strcmp_type_%d string@string\n", label_id, label_id);
-    printf("EXIT int@25\n");
-    printf("LABEL $$strcmp_s1_ok_%d\n", label_id);
-
-    printf("TYPE LF@__strcmp_type_%d %s\n", label_id, str2_var);
-    printf("JUMPIFEQ $$strcmp_s2_ok_%d LF@__strcmp_type_%d string@string\n", label_id, label_id);
-    printf("EXIT int@25\n");
-    printf("LABEL $$strcmp_s2_ok_%d\n", label_id);
-
-    // Porovnanie - LT pre s1 < s2
-    printf("LT LF@__strcmp_type_%d %s %s\n", label_id, str1_var, str2_var);
-    printf("JUMPIFEQ $$strcmp_less_%d LF@__strcmp_type_%d bool@true\n", label_id, label_id);
-
-    // GT pre s1 > s2
-    printf("GT LF@__strcmp_type_%d %s %s\n", label_id, str1_var, str2_var);
-    printf("JUMPIFEQ $$strcmp_greater_%d LF@__strcmp_type_%d bool@true\n", label_id, label_id);
-
-    // s1 == s2
-    printf("MOVE %s int@0\n", result_var);
-    printf("JUMP $$strcmp_end_%d\n", label_id);
-
-    // s1 < s2
-    printf("LABEL $$strcmp_less_%d\n", label_id);
-    printf("MOVE %s int@-1\n", result_var);
-    printf("JUMP $$strcmp_end_%d\n", label_id);
-
-    // s1 > s2
-    printf("LABEL $$strcmp_greater_%d\n", label_id);
-    printf("MOVE %s int@1\n", result_var);
-
-    printf("LABEL $$strcmp_end_%d\n", label_id);
+    // Call the builtin function via stack (push in order, popped in reverse)
+    printf("PUSHS %s\n", str1_var);
+    printf("PUSHS %s\n", str2_var);
+    printf("CALL $$__builtin_strcmp\n");
+    printf("POPS %s\n", result_var);
 }
 
 void generate_builtin_ord(const char *result_var, t_ast_node *param_node, t_ast_node *i_node)
@@ -519,44 +392,9 @@ void generate_builtin_ord(const char *result_var, t_ast_node *param_node, t_ast_
         generate_expression_code(i_node, i_var, sizeof(i_var));
     }
 
-    static int ord_counter = 0;
-    int label_id = ord_counter++;
-
-    // Type checking
-    printf("DEFVAR LF@__ord_type_%d\n", label_id);
-    printf("TYPE LF@__ord_type_%d %s\n", label_id, str_var);
-    printf("JUMPIFEQ $$ord_s_ok_%d LF@__ord_type_%d string@string\n", label_id, label_id);
-    printf("EXIT int@25\n");
-    printf("LABEL $$ord_s_ok_%d\n", label_id);
-
-    // Type checking
-    printf("TYPE LF@__ord_type_%d %s\n", label_id, i_var);
-    printf("JUMPIFEQ $$ord_i_ok_%d LF@__ord_type_%d string@int\n", label_id, label_id);
-    printf("EXIT int@26\n");
-    printf("LABEL $$ord_i_ok_%d\n", label_id);
-
-    // Získaj dĺžku stringu
-    printf("DEFVAR LF@__ord_len_%d\n", label_id);
-    printf("STRLEN LF@__ord_len_%d %s\n", label_id, str_var);
-
-    // Kontrola či je string prázdny
-    printf("DEFVAR LF@__ord_cmp_%d\n", label_id);
-    printf("EQ LF@__ord_cmp_%d LF@__ord_len_%d int@0\n", label_id, label_id);
-    printf("JUMPIFEQ $$ord_return_zero_%d LF@__ord_cmp_%d bool@true\n", label_id, label_id);
-
-    // Kontrola či i < 0
-    printf("LT LF@__ord_cmp_%d %s int@0\n", label_id, i_var);
-    printf("JUMPIFEQ $$ord_return_zero_%d LF@__ord_cmp_%d bool@true\n", label_id, label_id);
-
-    // Kontrola či i >= length(s) -
-    printf("LT LF@__ord_cmp_%d %s LF@__ord_len_%d\n", label_id, i_var, label_id);
-    printf("JUMPIFEQ $$ord_return_zero_%d LF@__ord_cmp_%d bool@false\n", label_id, label_id);
-
-    printf("STRI2INT %s %s %s\n", result_var, str_var, i_var);
-    printf("JUMP $$ord_end_%d\n", label_id);
-
-    printf("LABEL $$ord_return_zero_%d\n", label_id);
-    printf("MOVE %s int@0\n", result_var);
-
-    printf("LABEL $$ord_end_%d\n", label_id);
+    // Call the builtin function via stack (push in order, popped in reverse)
+    printf("PUSHS %s\n", str_var);
+    printf("PUSHS %s\n", i_var);
+    printf("CALL $$__builtin_ord\n");
+    printf("POPS %s\n", result_var);
 }

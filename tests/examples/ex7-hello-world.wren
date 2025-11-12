@@ -30,6 +30,12 @@ class Program {
             }
         }
         Ifj.write("Teraz by malo vypisat parameter\n")
+        {
+            var num1
+            num1 = 18
+            Ifj.write(num1)
+            Ifj.write("\n")
+        }
         Ifj.write(num1)
         Ifj.write("\n")
         return (num1 + num2) * hash
@@ -50,10 +56,27 @@ class Program {
 
     // hlavni funkce main
     static main() {
-        var added
-        added = add(1)
-        added = add(2,8)
+        var length1
+        length1 = Ifj.length("Hello")
+
+        var exp
+        exp = 6 * 12 + 12 * 34
+
+        var exp2
+        exp2 = 6 * 12 + 12 * 34
+
+        var exp3
+        exp3 = 6 * 12 + 12 * 34
+
+        var exp4
+        exp4 = 6 * 12 + 12 * 34 + 86 + 67 + 65 + 1 *5
+
+        var exp5
+        exp5 = 6 * 12 + 12 * 34 + 56 * 67 + 76 + 1 + exp4
+
+        var exp6
+        exp6 = add(exp5, exp4)
+        Ifj.write(exp6)
         Ifj.write("\n")
-        Ifj.write(added)
     }
 }

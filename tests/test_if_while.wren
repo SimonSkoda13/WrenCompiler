@@ -16,14 +16,24 @@ class Program {
         }
         
         // Test 2: While loop countdown
+        
         var count
         count = 3
         while (count > 0) {
             var dm
-            dm = Ifj.write(count)
-            dm = Ifj.write("\n")
+            dm = count * 2
+            Ifj.write("count: ")
+            Ifj.write(count)
+            Ifj.write("\n")
+            while (dm > 0) {
+                Ifj.write("dm: ")
+                Ifj.write(dm)
+                Ifj.write("\n")
+                dm = dm - 1
+            }
             count = count - 1
         }
+        
         
         // Test 3: If with null (should go to else)
         var y

@@ -98,6 +98,11 @@ t_symtable *get_global_symtable();
 void generate_header();
 
 /**
+ * @brief Generuje definície všetkých builtin funkcií ako callable subroutines
+ */
+void generate_builtin_function_definitions();
+
+/**
  * @brief Generuje kód pre výpis string literálu (WRITE string@...)
  * @param string String literál na výpis
  */
@@ -119,6 +124,21 @@ void generate_var_declaration(const char *var_name);
  * @param params Zoznam parametrov funkcie
  */
 void generate_function_start(const char *func_name, const char *mangled_name, t_param_list *params);
+
+/**
+ * @brief Generuje všetky DEFVAR pre premenné funkcie
+ */
+void generate_all_function_defvars();
+
+/**
+ * @brief Začne bufferovanie kódu tela funkcie
+ */
+void start_function_body_buffering();
+
+/**
+ * @brief Ukončí bufferovanie a vypíše DEFVAR + telo funkcie
+ */
+void end_function_body_buffering();
 
 /**
  * @brief Generuje kód pre koniec funkcie (POPFRAME, RETURN)
@@ -221,12 +241,6 @@ int get_next_label_id(void);
  * @param label_id Unikátne ID pre labely
  */
 void generate_if_start(t_ast_node *condition_ast, int label_id);
-
-/**
- * @brief Generuje label pre then vetvu (prázdna funkcia - flow continues)
- * @param label_id Unikátne ID pre labely
- */
-void generate_if_then(int label_id);
 
 /**
  * @brief Generuje prechod medzi then a else vetvou
