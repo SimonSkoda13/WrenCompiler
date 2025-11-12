@@ -977,9 +977,6 @@ void if_statement()
     generate_if_start(condition_ast, label_id);
 
     putback_token(); // Putback { after expression
-
-    // Then blok
-    generate_if_then(label_id);
     block(); // Parser vygeneruje kód then bloku
 
     // Prechod na else
