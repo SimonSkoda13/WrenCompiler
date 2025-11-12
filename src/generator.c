@@ -6,7 +6,7 @@
  *   - Martin Michálik (xmicham00)
  */
 
-#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
 #include "generator.h"
 #include "symtable.h"
 #include <stdbool.h>

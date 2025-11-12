@@ -7,7 +7,7 @@
  *   - Šimon Škoda (xskodas00)
  */
 
-#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
 #include "symtable.h"
 #include <stdlib.h>
 #include <string.h>
