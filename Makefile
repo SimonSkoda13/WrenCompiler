@@ -94,6 +94,12 @@ clean:
 	rm -f *.o
 	rm -rf $(BUILD_DIR)
 
+# Create zip archive with Makefile and source files (excluding *_test.c)
+zip:
+	@rm -f xmicham00.zip
+	@cd $(SRC_DIR) && zip -j ../xmicham00.zip $$(ls *.c *.h 2>/dev/null | grep -v '_test\.c')
+	@zip -u xmicham00.zip Makefile
+
 # Run tests (placeholder for now)
 test: $(TARGET)
 	@echo "Tests will be implemented here"
@@ -107,4 +113,4 @@ format:
 lint:
 	clang-tidy $(SOURCES) -- $(CFLAGS)
 
-.PHONY: all clean test valgrind format lint
+.PHONY: all clean test valgrind format lint zip local
