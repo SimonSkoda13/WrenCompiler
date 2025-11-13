@@ -622,6 +622,145 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
     }
 }
 
+/**
+ * @brief Helper function to generate code for binary operations that support both string and numeric types
+ * @param operator The operator type (OP_ADD or OP_MUL)
+ * @param left_var Left operand variable
+ * @param right_var Right operand variable
+ * @param result_var Result variable
+ * @param tmp_id Unique temporary ID for labels
+ */
+void generate_polymorphic_operation(e_token_type operator, const char *left_var, const char *right_var, const char *result_var, int tmp_id)
+{
+    char left_type[64], right_type[64];
+    snprintf(left_type, sizeof(left_type), "__type_left_%d", tmp_id);
+    snprintf(right_type, sizeof(right_type), "__type_right_%d", tmp_id);
+    symtable_add_function_var(global_symtable, left_type);
+    symtable_add_function_var(global_symtable, right_type);
+
+    // Get types of both operands
+    printf("TYPE LF@%s %s\n", left_type, left_var);
+    printf("TYPE LF@%s %s\n", right_type, right_var);
+
+    if (operator == OP_ADD)
+    {
+        // OP_ADD: String + String = concatenation, Num + Num = addition
+        printf("JUMPIFEQ $$add_is_string_%d LF@%s string@string\n", tmp_id, left_type);
+        
+        // Numeric addition path with INT2FLOAT conversion
+        char left_conv[64], right_conv[64];
+        snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", tmp_id);
+        snprintf(right_conv, sizeof(right_conv), "__conv_right_%d", tmp_id);
+        symtable_add_function_var(global_symtable, left_conv);
+        symtable_add_function_var(global_symtable, right_conv);
+
+        printf("MOVE LF@%s %s\n", left_conv, left_var);
+        printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
+        printf("JUMP $$conv_left_done_%d\n", tmp_id);
+        printf("LABEL $$conv_left_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
+        printf("LABEL $$conv_left_done_%d\n", tmp_id);
+
+        printf("MOVE LF@%s %s\n", right_conv, right_var);
+        printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("JUMP $$conv_right_done_%d\n", tmp_id);
+        printf("LABEL $$conv_right_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
+        printf("LABEL $$conv_right_done_%d\n", tmp_id);
+
+        printf("ADD %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        printf("JUMP $$add_end_%d\n", tmp_id);
+
+        // String concatenation path
+        printf("LABEL $$add_is_string_%d\n", tmp_id);
+        printf("JUMPIFEQ $$add_concat_%d LF@%s string@string\n", tmp_id, right_type);
+        printf("EXIT int@26\n");  // Type mismatch error
+        printf("LABEL $$add_concat_%d\n", tmp_id);
+        printf("CONCAT %s %s %s\n", result_var, left_var, right_var);
+        printf("LABEL $$add_end_%d\n", tmp_id);
+    }
+    else if (operator == OP_MUL)
+    {
+        // OP_MUL: String * Num = repetition, Num * Num = multiplication
+        printf("JUMPIFEQ $$mul_is_string_%d LF@%s string@string\n", tmp_id, left_type);
+        
+        // Numeric multiplication path with INT2FLOAT conversion
+        char left_conv[64], right_conv[64];
+        snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", tmp_id);
+        snprintf(right_conv, sizeof(right_conv), "__conv_right_%d", tmp_id);
+        symtable_add_function_var(global_symtable, left_conv);
+        symtable_add_function_var(global_symtable, right_conv);
+
+        printf("MOVE LF@%s %s\n", left_conv, left_var);
+        printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
+        printf("JUMP $$conv_left_done_%d\n", tmp_id);
+        printf("LABEL $$conv_left_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
+        printf("LABEL $$conv_left_done_%d\n", tmp_id);
+
+        printf("MOVE LF@%s %s\n", right_conv, right_var);
+        printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("JUMP $$conv_right_done_%d\n", tmp_id);
+        printf("LABEL $$conv_right_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
+        printf("LABEL $$conv_right_done_%d\n", tmp_id);
+
+        printf("MUL %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        printf("JUMP $$mul_end_%d\n", tmp_id);
+
+        // String repetition path: String * Num
+        printf("LABEL $$mul_is_string_%d\n", tmp_id);
+        
+        // Right operand must be Num (int or float)
+        printf("JUMPIFEQ $$mul_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$mul_right_is_float_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("EXIT int@26\n");  // Type mismatch error
+        
+        // Convert float to int and check if it's whole number
+        printf("LABEL $$mul_right_is_float_%d\n", tmp_id);
+        char is_whole[64], count_int[64];
+        snprintf(is_whole, sizeof(is_whole), "__mul_is_whole_%d", tmp_id);
+        snprintf(count_int, sizeof(count_int), "__mul_count_int_%d", tmp_id);
+        symtable_add_function_var(global_symtable, is_whole);
+        symtable_add_function_var(global_symtable, count_int);
+        
+        printf("ISINT LF@%s %s\n", is_whole, right_var);
+        printf("JUMPIFEQ $$mul_can_convert_%d LF@%s bool@true\n", tmp_id, is_whole);
+        printf("EXIT int@26\n");  // Float is not a whole number
+        printf("LABEL $$mul_can_convert_%d\n", tmp_id);
+        printf("FLOAT2INT LF@%s %s\n", count_int, right_var);
+        printf("JUMP $$mul_repeat_%d\n", tmp_id);
+        
+        printf("LABEL $$mul_right_is_int_%d\n", tmp_id);
+        printf("MOVE LF@%s %s\n", count_int, right_var);
+        
+        // String repetition loop
+        printf("LABEL $$mul_repeat_%d\n", tmp_id);
+        char counter[64], temp_result[64];
+        snprintf(counter, sizeof(counter), "__mul_counter_%d", tmp_id);
+        snprintf(temp_result, sizeof(temp_result), "__mul_result_%d", tmp_id);
+        symtable_add_function_var(global_symtable, counter);
+        symtable_add_function_var(global_symtable, temp_result);
+        
+        printf("MOVE LF@%s string@\n", temp_result);  // Empty string
+        printf("MOVE LF@%s int@0\n", counter);
+        printf("LABEL $$mul_loop_%d\n", tmp_id);
+        printf("LT LF@%s LF@%s LF@%s\n", is_whole, counter, count_int);
+        printf("JUMPIFEQ $$mul_loop_end_%d LF@%s bool@false\n", tmp_id, is_whole);
+        printf("CONCAT LF@%s LF@%s %s\n", temp_result, temp_result, left_var);
+        printf("ADD LF@%s LF@%s int@1\n", counter, counter);
+        printf("JUMP $$mul_loop_%d\n", tmp_id);
+        printf("LABEL $$mul_loop_end_%d\n", tmp_id);
+        printf("MOVE %s LF@%s\n", result_var, temp_result);
+        
+        printf("LABEL $$mul_end_%d\n", tmp_id);
+    }
+}
+
 int generate_expression_code(t_ast_node *node, char *result_var, size_t result_var_size)
 {
     if (node == NULL)
@@ -662,7 +801,8 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     // Spracujeme ľavý podstrom
     if (node->left != NULL)
     {
-        generate_expression_code(node->left, left_var, sizeof(left_var));
+        int err = generate_expression_code(node->left, left_var, sizeof(left_var));
+        if (err) return err;
 
         // Ak ľavý operand nie je jednoduchá hodnota, musíme ho uložiť do temp premennej
         if (node->left->left != NULL || node->left->right != NULL)
@@ -679,10 +819,11 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         }
     }
 
-    // Spracujeme pravý podstrom
-    if (node->right != NULL)
+    // Spracujeme pravý podstrom (ale nie pre OP_IS, kde pravá strana je typ, nie výraz)
+    if (node->right != NULL && node->token->type != OP_IS)
     {
-        generate_expression_code(node->right, right_var, sizeof(right_var));
+        int err = generate_expression_code(node->right, right_var, sizeof(right_var));
+        if (err) return err;
 
         // Ak pravý operand nie je jednoduchá hodnota, musíme ho uložiť do temp premennej
         if (node->right->left != NULL || node->right->right != NULL)
@@ -711,8 +852,20 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     switch (node->token->type)
     {
     case OP_ADD:
-    case OP_SUB:
+    {
+        // OP_ADD: String + String = concatenation, Num + Num = addition
+        int type_tmp = get_next_temp_var();
+        generate_polymorphic_operation(OP_ADD, left_var, right_var, result_var, type_tmp);
+        break;
+    }
     case OP_MUL:
+    {
+        // OP_MUL: String * Num = repetition, Num * Num = multiplication
+        int type_tmp = get_next_temp_var();
+        generate_polymorphic_operation(OP_MUL, left_var, right_var, result_var, type_tmp);
+        break;
+    }
+    case OP_SUB:
     case OP_DIV:
     case OP_LESS_THAN:
     case OP_GREATER_THAN:
@@ -754,17 +907,9 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         printf("LABEL $$conv_right_done_%d\n", type_tmp);
 
         // Now perform the operation with converted operands
-        if (node->token->type == OP_ADD)
-        {
-            printf("ADD %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
-        }
-        else if (node->token->type == OP_SUB)
+        if (node->token->type == OP_SUB)
         {
             printf("SUB %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
-        }
-        else if (node->token->type == OP_MUL)
-        {
-            printf("MUL %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
         }
         else if (node->token->type == OP_DIV)
         {
