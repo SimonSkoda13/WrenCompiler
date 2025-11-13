@@ -4,44 +4,39 @@ CFLAGS = -std=c11 -Wall -Wextra -pedantic -g
 TARGET = compiler
 SRC_DIR = src
 BUILD_DIR = build
-TEST_DIR = tests
 LDLIBS = -lm
 
-CUR_TEST=_test_cur_
-REF_TEST=_test_ref_
+# Source files (exclude *_test.c files, search in current directory)
+SOURCES = $(filter-out %_test.c, $(wildcard *.c))
+OBJECTS = $(SOURCES:.c=.o)
 
-SCAN = scanner
-ERRORS = errors
-LEX = lex
-EXPL_DIR=examples
-EXPL_PATH=$(TEST_DIR)/$(EXPL_DIR)/
-SCAN_PATH=$(TEST_DIR)/scanner/
-
-# Názvy testovacích programov
-EX0 = ex0-vsechny-konstrukce
-EX1 = ex1-faktorial-iterativne
-EX2 = ex2-faktorial-rekurzivne
-EX3 = ex3-prace-s-retezci
-EX4 = ex4-ciselne-literaly
-EX5 = ex5-multiline-strings
-EX6 = ex6-expressions
-
-# Source files (exclude *_test.c files)
-SOURCES = $(filter-out %_test.c, $(wildcard $(SRC_DIR)/*.c))
-OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+# Source files for local build (with src/ and build/ directories)
+LOCAL_SOURCES = $(filter-out %_test.c, $(wildcard $(SRC_DIR)/*.c))
+LOCAL_OBJECTS = $(LOCAL_SOURCES:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Default target
-all: $(BUILD_DIR) $(TARGET)
+all: $(TARGET)
+
+# Build the compiler
+$(TARGET): $(OBJECTS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS) $(LDLIBS)
+
+# Compile source files
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Local build with src/ and build/ directories
+local: $(BUILD_DIR) $(BUILD_DIR)/$(TARGET)
 
 # Create build directory
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Build the compiler
-$(TARGET): $(OBJECTS)
-		$(CC) $(CFLAGS) -o $(TARGET) $(OBJECTS) $(LDLIBS)
+# Build the compiler in build directory
+$(BUILD_DIR)/$(TARGET): $(LOCAL_OBJECTS)
+	$(CC) $(CFLAGS) -o $(BUILD_DIR)/$(TARGET) $(LOCAL_OBJECTS) $(LDLIBS)
 
-# Compile source files
+# Compile source files from src/ to build/
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -96,7 +91,8 @@ valgrind: $(TARGET)
 # Clean build artifacts
 clean:
 	rm -f $(TARGET)
-	rm -f $(BUILD_DIR)/*.o
+	rm -f *.o
+	rm -rf $(BUILD_DIR)
 
 # Run tests (placeholder for now)
 test: $(TARGET)
