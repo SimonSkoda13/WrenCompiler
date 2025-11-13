@@ -9,6 +9,7 @@
 #include "parser.h"
 #include <string.h>
 
+t_parser parser;
 // Buffer pre odložené generovanie funkcie main
 FILE *main_output_buffer = NULL;
 bool is_generating_main = false;
