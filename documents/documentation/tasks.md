@@ -35,14 +35,6 @@
 
 ## magyjar
 
-## Task 6: Built-in Functions
-
-**Files:** `src/builtins.c`, `src/builtins.h`
-
-- [x] Implement: `Ifj.read_str()`, `Ifj.read_num()`, `Ifj.write()`
-- [x] Implement: `Ifj.floor()`, `Ifj.str()`
-- [x] Implement: `Ifj.length()`, `Ifj.substring()`, `Ifj.strcmp()`, `Ifj.ord()`, `Ifj.chr()`
-
 ---
 
 ## vrbiniak
