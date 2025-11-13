@@ -222,6 +222,16 @@ void generate_assignment(const char *var_name, t_ast_node *ast);
 void get_value_string(t_ast_node *node, char *result, size_t result_size);
 
 /**
+ * @brief Helper funkcia pre generovanie polymorfných operácií (string aj numerické)
+ * @param operator Typ operátora (OP_ADD alebo OP_MUL)
+ * @param left_var Ľavý operand
+ * @param right_var Pravý operand
+ * @param result_var Výsledková premenná
+ * @param tmp_id Unikátne ID pre labely
+ */
+void generate_polymorphic_operation(e_token_type operator, const char *left_var, const char *right_var, const char *result_var, int tmp_id);
+
+/**
  * @brief Rekurzívna funkcia pre generovanie kódu z AST
  * @param node Aktuálny AST uzol
  * @param result_var Názov premennej kde sa uloží výsledok (formát: "LF@__tmp0")

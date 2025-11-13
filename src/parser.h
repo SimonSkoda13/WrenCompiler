@@ -33,7 +33,7 @@ typedef struct
 /**
  * Globálna inštancia parsera.
  */
-t_parser parser;
+extern t_parser parser;
 
 /**
  * Buffer pre odloženie generovania funkcie main
