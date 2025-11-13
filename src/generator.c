@@ -44,14 +44,14 @@ void start_function_body_buffering()
 {
     // Save original stdout
     original_stdout = stdout;
-    
+
     // Open memory stream for buffering
     function_body_stream = open_memstream(&function_body_buffer, &function_body_buffer_size);
     if (function_body_stream == NULL)
     {
         exit_with_error(ERR_INTERNAL, "Failed to create memory stream for function body");
     }
-    
+
     // Redirect stdout to buffer
     stdout = function_body_stream;
 }
@@ -62,18 +62,18 @@ void end_function_body_buffering()
     {
         return;
     }
-    
+
     // Flush and close the memory stream
     fflush(function_body_stream);
     fclose(function_body_stream);
     function_body_stream = NULL;
-    
+
     // Restore original stdout
     stdout = original_stdout;
-    
+
     // Now generate all DEFVARs first
     generate_all_function_defvars();
-    
+
     // Then output the buffered function body
     if (function_body_buffer != NULL && function_body_buffer_size > 0)
     {
@@ -302,7 +302,7 @@ void generate_var_declaration(const char *var_name)
         block_id = global_symtable->ifj_block_stack[global_symtable->ifj_block_stack_top - 1];
     }
     const char *unique_name = get_var_name_with_nesting(var_name, block_id);
-    
+
     // Add to function's variable list instead of generating DEFVAR immediately
     symtable_add_function_var(global_symtable, unique_name);
 }
@@ -343,7 +343,7 @@ void generate_all_function_defvars()
     {
         return;
     }
-    
+
     // Generate DEFVAR for all collected function variables
     for (int i = 0; i < global_symtable->ifj_function_vars_count; i++)
     {
@@ -622,6 +622,145 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
     }
 }
 
+/**
+ * @brief Helper function to generate code for binary operations that support both string and numeric types
+ * @param operator The operator type (OP_ADD or OP_MUL)
+ * @param left_var Left operand variable
+ * @param right_var Right operand variable
+ * @param result_var Result variable
+ * @param tmp_id Unique temporary ID for labels
+ */
+void generate_polymorphic_operation(e_token_type operator, const char *left_var, const char *right_var, const char *result_var, int tmp_id)
+{
+    char left_type[64], right_type[64];
+    snprintf(left_type, sizeof(left_type), "__type_left_%d", tmp_id);
+    snprintf(right_type, sizeof(right_type), "__type_right_%d", tmp_id);
+    symtable_add_function_var(global_symtable, left_type);
+    symtable_add_function_var(global_symtable, right_type);
+
+    // Get types of both operands
+    printf("TYPE LF@%s %s\n", left_type, left_var);
+    printf("TYPE LF@%s %s\n", right_type, right_var);
+
+    if (operator == OP_ADD)
+    {
+        // OP_ADD: String + String = concatenation, Num + Num = addition
+        printf("JUMPIFEQ $$add_is_string_%d LF@%s string@string\n", tmp_id, left_type);
+        
+        // Numeric addition path with INT2FLOAT conversion
+        char left_conv[64], right_conv[64];
+        snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", tmp_id);
+        snprintf(right_conv, sizeof(right_conv), "__conv_right_%d", tmp_id);
+        symtable_add_function_var(global_symtable, left_conv);
+        symtable_add_function_var(global_symtable, right_conv);
+
+        printf("MOVE LF@%s %s\n", left_conv, left_var);
+        printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
+        printf("JUMP $$conv_left_done_%d\n", tmp_id);
+        printf("LABEL $$conv_left_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
+        printf("LABEL $$conv_left_done_%d\n", tmp_id);
+
+        printf("MOVE LF@%s %s\n", right_conv, right_var);
+        printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("JUMP $$conv_right_done_%d\n", tmp_id);
+        printf("LABEL $$conv_right_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
+        printf("LABEL $$conv_right_done_%d\n", tmp_id);
+
+        printf("ADD %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        printf("JUMP $$add_end_%d\n", tmp_id);
+
+        // String concatenation path
+        printf("LABEL $$add_is_string_%d\n", tmp_id);
+        printf("JUMPIFEQ $$add_concat_%d LF@%s string@string\n", tmp_id, right_type);
+        printf("EXIT int@26\n");  // Type mismatch error
+        printf("LABEL $$add_concat_%d\n", tmp_id);
+        printf("CONCAT %s %s %s\n", result_var, left_var, right_var);
+        printf("LABEL $$add_end_%d\n", tmp_id);
+    }
+    else if (operator == OP_MUL)
+    {
+        // OP_MUL: String * Num = repetition, Num * Num = multiplication
+        printf("JUMPIFEQ $$mul_is_string_%d LF@%s string@string\n", tmp_id, left_type);
+        
+        // Numeric multiplication path with INT2FLOAT conversion
+        char left_conv[64], right_conv[64];
+        snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", tmp_id);
+        snprintf(right_conv, sizeof(right_conv), "__conv_right_%d", tmp_id);
+        symtable_add_function_var(global_symtable, left_conv);
+        symtable_add_function_var(global_symtable, right_conv);
+
+        printf("MOVE LF@%s %s\n", left_conv, left_var);
+        printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
+        printf("JUMP $$conv_left_done_%d\n", tmp_id);
+        printf("LABEL $$conv_left_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
+        printf("LABEL $$conv_left_done_%d\n", tmp_id);
+
+        printf("MOVE LF@%s %s\n", right_conv, right_var);
+        printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("JUMP $$conv_right_done_%d\n", tmp_id);
+        printf("LABEL $$conv_right_is_int_%d\n", tmp_id);
+        printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
+        printf("LABEL $$conv_right_done_%d\n", tmp_id);
+
+        printf("MUL %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
+        printf("JUMP $$mul_end_%d\n", tmp_id);
+
+        // String repetition path: String * Num
+        printf("LABEL $$mul_is_string_%d\n", tmp_id);
+        
+        // Right operand must be Num (int or float)
+        printf("JUMPIFEQ $$mul_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$mul_right_is_float_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("EXIT int@26\n");  // Type mismatch error
+        
+        // Convert float to int and check if it's whole number
+        printf("LABEL $$mul_right_is_float_%d\n", tmp_id);
+        char is_whole[64], count_int[64];
+        snprintf(is_whole, sizeof(is_whole), "__mul_is_whole_%d", tmp_id);
+        snprintf(count_int, sizeof(count_int), "__mul_count_int_%d", tmp_id);
+        symtable_add_function_var(global_symtable, is_whole);
+        symtable_add_function_var(global_symtable, count_int);
+        
+        printf("ISINT LF@%s %s\n", is_whole, right_var);
+        printf("JUMPIFEQ $$mul_can_convert_%d LF@%s bool@true\n", tmp_id, is_whole);
+        printf("EXIT int@26\n");  // Float is not a whole number
+        printf("LABEL $$mul_can_convert_%d\n", tmp_id);
+        printf("FLOAT2INT LF@%s %s\n", count_int, right_var);
+        printf("JUMP $$mul_repeat_%d\n", tmp_id);
+        
+        printf("LABEL $$mul_right_is_int_%d\n", tmp_id);
+        printf("MOVE LF@%s %s\n", count_int, right_var);
+        
+        // String repetition loop
+        printf("LABEL $$mul_repeat_%d\n", tmp_id);
+        char counter[64], temp_result[64];
+        snprintf(counter, sizeof(counter), "__mul_counter_%d", tmp_id);
+        snprintf(temp_result, sizeof(temp_result), "__mul_result_%d", tmp_id);
+        symtable_add_function_var(global_symtable, counter);
+        symtable_add_function_var(global_symtable, temp_result);
+        
+        printf("MOVE LF@%s string@\n", temp_result);  // Empty string
+        printf("MOVE LF@%s int@0\n", counter);
+        printf("LABEL $$mul_loop_%d\n", tmp_id);
+        printf("LT LF@%s LF@%s LF@%s\n", is_whole, counter, count_int);
+        printf("JUMPIFEQ $$mul_loop_end_%d LF@%s bool@false\n", tmp_id, is_whole);
+        printf("CONCAT LF@%s LF@%s %s\n", temp_result, temp_result, left_var);
+        printf("ADD LF@%s LF@%s int@1\n", counter, counter);
+        printf("JUMP $$mul_loop_%d\n", tmp_id);
+        printf("LABEL $$mul_loop_end_%d\n", tmp_id);
+        printf("MOVE %s LF@%s\n", result_var, temp_result);
+        
+        printf("LABEL $$mul_end_%d\n", tmp_id);
+    }
+}
+
 int generate_expression_code(t_ast_node *node, char *result_var, size_t result_var_size)
 {
     if (node == NULL)
@@ -662,7 +801,8 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     // Spracujeme ľavý podstrom
     if (node->left != NULL)
     {
-        generate_expression_code(node->left, left_var, sizeof(left_var));
+        int err = generate_expression_code(node->left, left_var, sizeof(left_var));
+        if (err) return err;
 
         // Ak ľavý operand nie je jednoduchá hodnota, musíme ho uložiť do temp premennej
         if (node->left->left != NULL || node->left->right != NULL)
@@ -679,10 +819,11 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         }
     }
 
-    // Spracujeme pravý podstrom
-    if (node->right != NULL)
+    // Spracujeme pravý podstrom (ale nie pre OP_IS, kde pravá strana je typ, nie výraz)
+    if (node->right != NULL && node->token->type != OP_IS)
     {
-        generate_expression_code(node->right, right_var, sizeof(right_var));
+        int err = generate_expression_code(node->right, right_var, sizeof(right_var));
+        if (err) return err;
 
         // Ak pravý operand nie je jednoduchá hodnota, musíme ho uložiť do temp premennej
         if (node->right->left != NULL || node->right->right != NULL)
@@ -711,8 +852,20 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     switch (node->token->type)
     {
     case OP_ADD:
-    case OP_SUB:
+    {
+        // OP_ADD: String + String = concatenation, Num + Num = addition
+        int type_tmp = get_next_temp_var();
+        generate_polymorphic_operation(OP_ADD, left_var, right_var, result_var, type_tmp);
+        break;
+    }
     case OP_MUL:
+    {
+        // OP_MUL: String * Num = repetition, Num * Num = multiplication
+        int type_tmp = get_next_temp_var();
+        generate_polymorphic_operation(OP_MUL, left_var, right_var, result_var, type_tmp);
+        break;
+    }
+    case OP_SUB:
     case OP_DIV:
     case OP_LESS_THAN:
     case OP_GREATER_THAN:
@@ -732,7 +885,7 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         symtable_add_function_var(global_symtable, right_conv);
         symtable_add_function_var(global_symtable, left_type);
         symtable_add_function_var(global_symtable, right_type);
-        
+
         // Convert left operand to float if it's int
         printf("MOVE LF@%s %s\n", left_conv, left_var);
         printf("TYPE LF@%s LF@%s\n", left_type, left_conv);
@@ -742,7 +895,7 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         printf("LABEL $$conv_left_is_int_%d\n", type_tmp);
         printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
         printf("LABEL $$conv_left_done_%d\n", type_tmp);
-        
+
         // Convert right operand to float if it's int
         printf("MOVE LF@%s %s\n", right_conv, right_var);
         printf("TYPE LF@%s LF@%s\n", right_type, right_conv);
@@ -752,19 +905,11 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         printf("LABEL $$conv_right_is_int_%d\n", type_tmp);
         printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
         printf("LABEL $$conv_right_done_%d\n", type_tmp);
-        
+
         // Now perform the operation with converted operands
-        if (node->token->type == OP_ADD)
-        {
-            printf("ADD %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
-        }
-        else if (node->token->type == OP_SUB)
+        if (node->token->type == OP_SUB)
         {
             printf("SUB %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
-        }
-        else if (node->token->type == OP_MUL)
-        {
-            printf("MUL %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
         }
         else if (node->token->type == OP_DIV)
         {
@@ -797,7 +942,68 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
             printf("LT %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
             printf("NOT %s %s\n", result_var, result_var);
         }
-        
+
+        break;
+    }
+    case OP_IS:
+    {
+        if (node->right == NULL || node->right->token == NULL || node->right->token->type != KEYWORD)
+        {
+            return ERR_INTERNAL;
+        }
+
+        e_keyword expected_type = node->right->token->value.keyword;
+        const char *type_string = NULL;
+
+        // Mapovanie typov
+        switch (expected_type)
+        {
+        case KW_NUM:
+            type_string = "float"; // Preferujeme float lebo IFJ25 Num je float
+            break;
+        case KW_STRING:
+            type_string = "string";
+            break;
+        case KW_NULL_TYPE:
+            type_string = "nil";
+            break;
+        default:
+            return ERR_INTERNAL; // Neplatný typ pre 'is'
+        }
+
+        // Vytvoríme dočasné premenné pre type check
+        int is_tmp = get_next_temp_var();
+        char type_var[64];
+        snprintf(type_var, sizeof(type_var), "__is_type_%d", is_tmp);
+        symtable_add_function_var(global_symtable, type_var);
+
+        // Získame typ ľavého operandu
+        printf("TYPE LF@%s %s\n", type_var, left_var);
+
+        // Porovnáme typ
+        if (expected_type == KW_NUM)
+        {
+            // Num môže byť int ALEBO float
+            printf("JUMPIFEQ $$is_true_%d LF@%s string@float\n", is_tmp, type_var);
+            printf("JUMPIFEQ $$is_true_%d LF@%s string@int\n", is_tmp, type_var);
+        }
+        else
+        {
+            // String alebo Null - presná zhoda
+            printf("JUMPIFEQ $$is_true_%d LF@%s string@%s\n", is_tmp, type_var, type_string);
+        }
+
+        // Typ nesedí - false
+        printf("MOVE %s bool@false\n", result_var);
+        printf("JUMP $$is_end_%d\n", is_tmp);
+
+        // Typ sedí - true
+        printf("LABEL $$is_true_%d\n", is_tmp);
+        printf("MOVE %s bool@true\n", result_var);
+
+        // Koniec
+        printf("LABEL $$is_end_%d\n", is_tmp);
+
         break;
     }
     default:
@@ -823,7 +1029,7 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
 
     int block_id = var_node->ifj_data.ifj_var.ifj_block_id;
     const char *temp_name = get_var_name_with_nesting(var_name, block_id);
-    
+
     // IMPORTANT: Copy to local buffer because get_var_name_with_nesting uses static buffer
     char unique_name[256];
     strncpy(unique_name, temp_name, sizeof(unique_name) - 1);
@@ -985,7 +1191,7 @@ void generate_builtin_function_definitions()
     printf("TYPE LF@%%type LF@%%param\n");
     printf("JUMPIFEQ $$floor_is_int LF@%%type string@int\n");
     printf("JUMPIFEQ $$floor_is_float LF@%%type string@float\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$floor_is_int\n");
     printf("MOVE LF@%%result LF@%%param\n");
     printf("JUMP $$floor_end\n");
@@ -1011,7 +1217,7 @@ void generate_builtin_function_definitions()
     printf("JUMPIFEQ $$str_is_float LF@%%type string@float\n");
     printf("JUMPIFEQ $$str_is_bool LF@%%type string@bool\n");
     printf("JUMPIFEQ $$str_is_nil LF@%%type string@nil\n");
-    printf("EXIT int@99\n");  // Unknown type
+    printf("EXIT int@99\n"); // Unknown type
     printf("LABEL $$str_is_string\n");
     printf("MOVE LF@%%result LF@%%param\n");
     printf("JUMP $$str_end\n");
@@ -1057,7 +1263,7 @@ void generate_builtin_function_definitions()
     printf("POPS LF@%%param\n");
     printf("TYPE LF@%%type LF@%%param\n");
     printf("JUMPIFEQ $$length_ok LF@%%type string@string\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$length_ok\n");
     printf("STRLEN LF@%%result LF@%%param\n");
     printf("PUSHS LF@%%result\n");
@@ -1075,7 +1281,7 @@ void generate_builtin_function_definitions()
     printf("POPS LF@%%param\n");
     printf("TYPE LF@%%type LF@%%param\n");
     printf("JUMPIFEQ $$chr_ok LF@%%type string@int\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$chr_ok\n");
     printf("INT2CHAR LF@%%result LF@%%param\n");
     printf("PUSHS LF@%%result\n");
@@ -1092,15 +1298,15 @@ void generate_builtin_function_definitions()
     printf("DEFVAR LF@%%result\n");
     printf("DEFVAR LF@%%type1\n");
     printf("DEFVAR LF@%%type2\n");
-    printf("POPS LF@%%param2\n");  // Pop in reverse order
+    printf("POPS LF@%%param2\n"); // Pop in reverse order
     printf("POPS LF@%%param1\n");
     printf("TYPE LF@%%type1 LF@%%param1\n");
     printf("TYPE LF@%%type2 LF@%%param2\n");
     printf("JUMPIFEQ $$strcmp_type1_ok LF@%%type1 string@string\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$strcmp_type1_ok\n");
     printf("JUMPIFEQ $$strcmp_type2_ok LF@%%type2 string@string\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$strcmp_type2_ok\n");
     printf("LT LF@%%result LF@%%param1 LF@%%param2\n");
     printf("JUMPIFEQ $$strcmp_less LF@%%result bool@true\n");
@@ -1130,15 +1336,15 @@ void generate_builtin_function_definitions()
     printf("DEFVAR LF@%%type2\n");
     printf("DEFVAR LF@%%len\n");
     printf("DEFVAR LF@%%cmp\n");
-    printf("POPS LF@%%param2\n");  // Pop in reverse order
+    printf("POPS LF@%%param2\n"); // Pop in reverse order
     printf("POPS LF@%%param1\n");
     printf("TYPE LF@%%type1 LF@%%param1\n");
     printf("TYPE LF@%%type2 LF@%%param2\n");
     printf("JUMPIFEQ $$ord_type1_ok LF@%%type1 string@string\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$ord_type1_ok\n");
     printf("JUMPIFEQ $$ord_type2_ok LF@%%type2 string@int\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$ord_type2_ok\n");
     printf("STRLEN LF@%%len LF@%%param1\n");
     printf("LT LF@%%cmp LF@%%param2 int@0\n");
@@ -1171,20 +1377,20 @@ void generate_builtin_function_definitions()
     printf("DEFVAR LF@%%cmp\n");
     printf("DEFVAR LF@%%idx\n");
     printf("DEFVAR LF@%%char\n");
-    printf("POPS LF@%%param3\n");  // Pop in reverse order
+    printf("POPS LF@%%param3\n"); // Pop in reverse order
     printf("POPS LF@%%param2\n");
     printf("POPS LF@%%param1\n");
     printf("TYPE LF@%%type1 LF@%%param1\n");
     printf("TYPE LF@%%type2 LF@%%param2\n");
     printf("TYPE LF@%%type3 LF@%%param3\n");
     printf("JUMPIFEQ $$substring_type1_ok LF@%%type1 string@string\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$substring_type1_ok\n");
     printf("JUMPIFEQ $$substring_type2_ok LF@%%type2 string@int\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$substring_type2_ok\n");
     printf("JUMPIFEQ $$substring_type3_ok LF@%%type3 string@int\n");
-    printf("EXIT int@25\n");  // Type error
+    printf("EXIT int@25\n"); // Type error
     printf("LABEL $$substring_type3_ok\n");
     printf("STRLEN LF@%%len LF@%%param1\n");
     // Check if i < 0 or j < 0 or i > j or i >= len
