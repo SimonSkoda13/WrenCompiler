@@ -9,22 +9,25 @@
 #ifndef WRENCOMPILER_PARSER_H
 #define WRENCOMPILER_PARSER_H
 
+#define _POSIX_C_SOURCE 200809L
 #include "scanner.h"
 #include "errors.h"
 #include "expression.h"
 #include "generator.h"
 #include "symtable.h"
 #include "ast.h"
+#include "builtins.h"
 
 /**
  * @struct Štruktúra pre parser.
  */
-typedef struct {
+typedef struct
+{
     t_scanner *scanner;
     t_token *current_token;
     t_token *putback_token;
     bool has_putback;
-    t_symtable *symtable;  // Tabuľka symbolov
+    t_symtable *symtable; // Tabuľka symbolov
 } t_parser;
 
 /**
@@ -44,7 +47,7 @@ extern bool is_generating_main;
 
 /**
  * Získa nasledujúci token zo scanneru.
- * Ak je has_putback true, vráti uložený putback token namiesto získania nového a nastaví has_putback na false. 
+ * Ak je has_putback true, vráti uložený putback token namiesto získania nového a nastaví has_putback na false.
  */
 void next_token();
 /**
@@ -79,12 +82,14 @@ void func_list();
 void func();
 /**
  * Spracuje zoznam parametrov funkcie.
+ * @param params Ukazovateľ na štruktúru kde sa uložia názvy parametrov
  */
-void param_list();
+void param_list(t_param_list *params);
 /**
  * Spracuje zvyšok zoznamu parametrov funkcie po prvom parametri.
+ * @param params Ukazovateľ na štruktúru kde sa uložia názvy parametrov
  */
-void param_list_tail();
+void param_list_tail(t_param_list *params);
 /**
  * Spracuje blok kódu uzavretý v zložených zátvorkách. { ... }
  */
@@ -123,19 +128,21 @@ void func_call();
 void return_statement();
 /**
  * Spracuje zoznam argumentov funkcie.
+ * @return Počet argumentov
  */
-void arg_list();
+int arg_list();
 /**
  * Spracuje zvyšok zoznamu argumentov funkcie po prvom argumente.
+ * @return Počet argumentov v tomto volaní (0 alebo viac)
  */
-void arg_list_tail();
+int arg_list_tail();
 /**
  * Spracuje výraz.
  * @param token1 Prvý token výrazu
  * @param token2 Druhý token výrazu (môže byť NULL)
  * @return Ukazovateľ na AST koreň výrazu
  */
-t_ast_node* expression(t_token *token1, t_token *token2);
+t_ast_node *expression(t_token *token1, t_token *token2);
 void expression_continue();
 /**
  * Spracuje terminál vo výraze.
@@ -154,6 +161,5 @@ void eols();
  * Hlavná funkcia pre spustenie parsera.
  */
 void parse_program();
-
 
 #endif // WRENCOMPILER_PARSER_H

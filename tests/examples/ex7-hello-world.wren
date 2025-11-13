@@ -1,13 +1,82 @@
 import "ifj25" for Ifj
 class Program {
-    // hlavni funkce main
-    static main() {
-        var myStr
-        myStr = "st" * 3
-        Ifj.write(myStr)
+    static unicorn {
+        return "my little pony"
     }
 
-    static myFunc() {
-        var foo
+    static add(num1) {
+        Ifj.write("function add1:\n")
+        var hash1
+        hash1 = 17 * 31
+        return num1 * hash1
+    }
+
+    static add(num1, num2) {
+        Ifj.write("function add2:\n")
+        var hash
+        hash = 17 * 31
+        {
+            var num1
+            num1 = 69
+            Ifj.write("Teraz by malo vypisat 69\n")
+            Ifj.write(num1)
+            Ifj.write("\n")
+            {
+                var num1
+                num1 = 11
+                Ifj.write("Teraz by malo vypisat 11\n")
+                Ifj.write(num1)
+                Ifj.write("\n")
+            }
+        }
+        Ifj.write("Teraz by malo vypisat parameter\n")
+        {
+            var num1
+            num1 = 18
+            Ifj.write(num1)
+            Ifj.write("\n")
+        }
+        Ifj.write(num1)
+        Ifj.write("\n")
+        return (num1 + num2) * hash
+    }
+
+    static add(num1, num2, num3) {
+        Ifj.write("function add3:\n")
+        return (num1 + num2 + num3)
+    }
+
+    static getString() {
+        var sp
+        var st
+        st = 1
+        sp = st
+        return "string z funkcie\n"
+    }
+
+    // hlavni funkce main
+    static main() {
+        var length1
+        length1 = Ifj.length("Hello")
+
+        var exp
+        exp = 6 * 12 + 12 * 34
+
+        var exp2
+        exp2 = 6 * 12 + 12 * 34
+
+        var exp3
+        exp3 = 6 * 12 + 12 * 34
+
+        var exp4
+        exp4 = 6 * 12 + 12 * 34 + 86 + 67 + 65 + 1 *5
+
+        var exp5
+        exp5 = 6 * 12 + 12 * 34 + 56 * 67 + 76 + 1 + exp4
+
+        var exp6
+        exp6 = add(exp5, exp4)
+        Ifj.write(exp6)
+        Ifj.write("\n")
     }
 }

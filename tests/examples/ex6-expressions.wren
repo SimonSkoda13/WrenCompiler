@@ -6,6 +6,7 @@ class Program {
                             // vychozi hodnota je null
         myValue = (5 + 3) * 2 // 16
 
+        var myStr
         myStr = "super string"
 
         if (myValue == null) {

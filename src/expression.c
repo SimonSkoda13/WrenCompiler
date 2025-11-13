@@ -394,7 +394,7 @@ int parse_expression(t_token *token1, t_token *token2, t_ast_node **tree) {
             if (!first_token_used) {
                 // Ak sme práve začali parsovať expression
                 first_token_used = 1;
-                //TODO: Emtpy if statement edge-case
+                //TODO: jednoduché priradenie x = y
             }
             current_token_enum = map_token_to_enum(current_token);
             if (current_token_enum == PREC_INVALID) {
