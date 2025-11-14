@@ -8,7 +8,7 @@ class Program {
     // pretizena verze funkce vyse s jednim parametrem
     static getAnswer(arg) {
         if (arg is Num) {   // podmineny prikaz, operator porovnani typu
-            if (arg - 1 > 32 * 84.1 / 2.4) {  // porovnavaci vyraz ma na obou stranach zase vyrazy
+            if (arg - 1 > 10 * 84.1 / 2.4) {  // porovnavaci vyraz ma na obou stranach zase vyrazy
                 // v zakladnim zadani neumime volat funkci mimo prirazeni, proto zde prirazujeme
                 // navratovou hodnotu (kazda funkce nejakou ma) napr. do "dummy" globalni promenne __d
                 __d = Ifj.write("Celkem velke cislo!\n")

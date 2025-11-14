@@ -26,15 +26,15 @@ $(TARGET): $(OBJECTS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 # Local build with src/ and build/ directories
-local: $(BUILD_DIR) $(BUILD_DIR)/$(TARGET)
+local: $(BUILD_DIR) $(TARGET)_local
 
 # Create build directory
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-# Build the compiler in build directory
-$(BUILD_DIR)/$(TARGET): $(LOCAL_OBJECTS)
-	$(CC) $(CFLAGS) -o $(BUILD_DIR)/$(TARGET) $(LOCAL_OBJECTS) $(LDLIBS)
+# Build the compiler from src/ (binary in root directory)
+$(TARGET)_local: $(LOCAL_OBJECTS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(LOCAL_OBJECTS) $(LDLIBS)
 
 # Compile source files from src/ to build/
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c

@@ -16,6 +16,9 @@
 // Globálna premenná pre prístup k tabuľke symbolov pri generovaní kódu
 static t_symtable *global_symtable = NULL;
 
+// Tabuľka pre globálne premenné (aby sme vedeli, ktoré už boli deklarované)
+static t_symtable *global_vars_symtable = NULL;
+
 // Počítadlo pre unikátne labely pre if/while konštrukcie
 static int ifj_label_counter = 0;
 
@@ -24,6 +27,14 @@ static char *function_body_buffer = NULL;
 static size_t function_body_buffer_size = 0;
 static FILE *function_body_stream = NULL;
 static FILE *original_stdout = NULL;
+
+// Buffer for helper variables (if_cond, while_cond, etc.)
+#define MAX_HELPER_VARS 100
+static char *helper_vars[MAX_HELPER_VARS];
+static int helper_vars_count = 0;
+
+// Aktuálna funkcia (pre sledovanie, či sme v main)
+static const char *current_function_name = NULL;
 
 void generator_set_symtable(t_symtable *ifj_symtable)
 {
@@ -35,9 +46,121 @@ t_symtable *get_global_symtable()
     return global_symtable;
 }
 
+void generator_set_global_symtable(t_symtable *global_table)
+{
+    global_vars_symtable = global_table;
+}
+
+void generate_global_defvar_once(const char *var_name)
+{
+    if (global_vars_symtable == NULL)
+    {
+        return;
+    }
+
+    // Skontrolujeme či DEFVAR už bol vygenerovaný (nie či premenná existuje v symtable)
+    t_avl_node *node = symtable_search(global_vars_symtable, var_name);
+    
+    // Generujeme DEFVAR len ak:
+    // 1. Premenná ešte neexistuje v symtable (node == NULL), alebo
+    // 2. Premenná existuje, ale DEFVAR ešte nebol vygenerovaný
+    if (node == NULL || !node->ifj_data.ifj_var.ifj_defvar_generated)
+    {
+        // Deklarujeme s hodnotou null
+        printf("DEFVAR GF@__%s\n", var_name);
+        printf("MOVE GF@__%s nil@nil\n", var_name);
+        
+        // Označíme že DEFVAR bol vygenerovaný
+        if (node == NULL)
+        {
+            // Pridáme do tabuľky ak ešte neexistuje
+            symtable_insert_global_var(global_vars_symtable, var_name, TYPE_UNKNOWN);
+            node = symtable_search(global_vars_symtable, var_name);
+        }
+        
+        if (node != NULL)
+        {
+            node->ifj_data.ifj_var.ifj_defvar_generated = true;
+        }
+    }
+}
+
 int get_next_label_id()
 {
     return ifj_label_counter++;
+}
+
+void register_helper_var(const char *var_name)
+{
+    if (helper_vars_count >= MAX_HELPER_VARS)
+    {
+        exit_with_error(ERR_INTERNAL, "Too many helper variables");
+    }
+    
+    // Check if already registered
+    for (int i = 0; i < helper_vars_count; i++)
+    {
+        if (strcmp(helper_vars[i], var_name) == 0)
+        {
+            return; // Already registered
+        }
+    }
+    
+    helper_vars[helper_vars_count] = strdup(var_name);
+    helper_vars_count++;
+}
+
+void generate_helper_defvars()
+{
+    for (int i = 0; i < helper_vars_count; i++)
+    {
+        printf("DEFVAR %s\n", helper_vars[i]);
+    }
+}
+
+void clear_helper_vars()
+{
+    for (int i = 0; i < helper_vars_count; i++)
+    {
+        free(helper_vars[i]);
+        helper_vars[i] = NULL;
+    }
+    helper_vars_count = 0;
+}
+
+// Prejdeme všetky uzly v globálnej symtable a vygenerujeme DEFVAR pre globálne premenné
+void traverse_and_generate(t_avl_node *node)
+{
+    if (node == NULL)
+    {
+        return;
+    }
+    
+    traverse_and_generate(node->ifj_left);
+    
+    // Ak je to globálna premenná, vygenerujeme DEFVAR
+    if (node->ifj_sym_type == SYM_VAR_GLOBAL)
+    {
+        printf("DEFVAR GF@__%s\n", node->ifj_key);
+        printf("MOVE GF@__%s nil@nil\n", node->ifj_key);
+    }
+    
+    traverse_and_generate(node->ifj_right);
+}
+
+void generate_global_variables_declarations()
+{
+    if (global_vars_symtable == NULL)
+    {
+        return;
+    }
+    
+    if (global_vars_symtable->ifj_root == NULL)
+    {
+        return;
+    }
+    
+    traverse_and_generate(global_vars_symtable->ifj_root);
 }
 
 void start_function_body_buffering()
@@ -73,6 +196,16 @@ void end_function_body_buffering()
 
     // Now generate all DEFVARs first
     generate_all_function_defvars();
+    
+    // Generate helper variables (if_cond, etc.)
+    generate_helper_defvars();
+    
+    // Pre main funkciu vygenerujeme deklarácie globálnych premenných
+    // pred výpisom tela funkcie (po LABEL $$main, pred CREATEFRAME)
+    if (current_function_name != NULL && strcmp(current_function_name, "main") == 0)
+    {
+        generate_global_variables_declarations();
+    }
 
     // Then output the buffered function body
     if (function_body_buffer != NULL && function_body_buffer_size > 0)
@@ -284,7 +417,7 @@ void builtin_write_var(char *var_id)
     else if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_GLOBAL)
     {
         // Global variables use GF@ frame
-        printf("WRITE GF@%s\n", var_id);
+        printf("WRITE GF@__%s\n", var_id);
     }
     else
     {
@@ -309,10 +442,15 @@ void generate_var_declaration(const char *var_name)
 
 void generate_function_start(const char *func_name, const char *mangled_name, t_param_list *params)
 {
+    // Nastavíme aktuálnu funkciu
+    current_function_name = func_name;
+    
     // Vygenerujeme label pre funkciu
     if (strcmp(func_name, "main") == 0)
     {
         printf("LABEL $$main\n");
+        // Pre main funkciu NEBUDE generovať deklarácie tu, ale až na konci po naparsovaní
+        // Ponecháme prázdny marker, kam sa vrátia deklarácie
     }
     else
     {
@@ -356,11 +494,20 @@ void generate_all_function_defvars()
 
 void generate_function_end(const char *func_name)
 {
+    // Ak funkcia nemala explicitný return, vrátime implicitný nil
+    if (strcmp(func_name, "main") != 0)
+    {
+        printf("PUSHS nil@nil\n");
+    }
+    
     printf("POPFRAME\n");
     if (strcmp(func_name, "main") != 0)
     {
         printf("RETURN\n");
     }
+    
+    // Clear helper variables for next function
+    clear_helper_vars();
 }
 
 void generate_return_value(t_ast_node *ast)
@@ -388,6 +535,23 @@ void generate_return_value(t_ast_node *ast)
         }
         printf("PUSHS %s\n", result_var);
     }
+}
+
+void generate_return_statement(t_ast_node *ast)
+{
+    // V main funkcii používame EXIT namiesto RETURN
+    if (current_function_name != NULL && strcmp(current_function_name, "main") == 0)
+    {
+        printf("EXIT int@0\n");
+        return;
+    }
+    
+    // Pushni návratovú hodnotu na zásobník
+    generate_return_value(ast);
+    
+    // Ukončenie funkcie
+    printf("POPFRAME\n");
+    printf("RETURN\n");
 }
 
 void generate_push_argument(t_ast_node *ast)
@@ -586,10 +750,44 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
         }
         break;
     }
-    case IDENTIFIER:
     case GLOBAL_VAR:
     {
-        // Nájdeme premennú viditeľnú z aktuálneho bloku
+        // Globálna premenná - použijeme GF@
+        // Už je deklarovaná na začiatku programu
+        snprintf(result, result_size, "GF@__%s", node->token->value.string);
+        break;
+    }
+    case IDENTIFIER:
+    {
+        // Najprv skontrolujeme, či ide o getter
+        char *getter_mangled = mangle_getter_name(node->token->value.string);
+        if (getter_mangled != NULL)
+        {
+            t_avl_node *getter_node = symtable_search(global_symtable, getter_mangled);
+            if (getter_node != NULL && getter_node->ifj_sym_type == SYM_GETTER)
+            {
+                // Je to getter - vygenerujeme volanie a výsledok uložíme do dočasnej premennej
+                int temp_id = get_next_temp_var();
+                char temp_var[64];
+                snprintf(temp_var, sizeof(temp_var), "__getter_result_%d", temp_id);
+                
+                // Pridáme dočasnú premennú do zoznamu funkčných premenných
+                symtable_add_function_var(global_symtable, temp_var);
+                
+                // Zavoláme getter
+                printf("CALL $%s\n", getter_mangled);
+                
+                // Getter vráti hodnotu na zásobník, popneme ju do dočasnej premennej
+                printf("POPS LF@%s\n", temp_var);
+                
+                snprintf(result, result_size, "LF@%s", temp_var);
+                free(getter_mangled);
+                break;
+            }
+            free(getter_mangled);
+        }
+        
+        // Nie je to getter - hľadáme lokálnu premennú
         t_avl_node *var_node = symtable_search_var_scoped(global_symtable, node->token->value.string);
         if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
         {
@@ -599,7 +797,7 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
         }
         else
         {
-            // Global variable or not found - use as is
+            // Not found - use as is (should not happen with proper semantic checking)
             snprintf(result, result_size, "LF@%s", node->token->value.string);
         }
         break;
@@ -865,12 +1063,22 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         generate_polymorphic_operation(OP_MUL, left_var, right_var, result_var, type_tmp);
         break;
     }
+    case OP_EQUALS:
+    case OP_NOT_EQUALS:
+    {
+        // Pre == a != použijeme priame porovnanie bez konverzie
+        // IFJcode25 EQ funguje aj pre rôzne typy (vráti false)
+        printf("EQ %s %s %s\n", result_var, left_var, right_var);
+        if (node->token->type == OP_NOT_EQUALS)
+        {
+            printf("NOT %s %s\n", result_var, result_var);
+        }
+        break;
+    }
     case OP_SUB:
     case OP_DIV:
     case OP_LESS_THAN:
     case OP_GREATER_THAN:
-    case OP_EQUALS:
-    case OP_NOT_EQUALS:
     case OP_LESS_EQUAL:
     case OP_GREATER_THAN_EQUAL:
     {
@@ -922,15 +1130,6 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         else if (node->token->type == OP_GREATER_THAN)
         {
             printf("GT %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
-        }
-        else if (node->token->type == OP_EQUALS)
-        {
-            printf("EQ %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
-        }
-        else if (node->token->type == OP_NOT_EQUALS)
-        {
-            printf("EQ %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
-            printf("NOT %s %s\n", result_var, result_var);
         }
         else if (node->token->type == OP_LESS_EQUAL)
         {
@@ -1069,6 +1268,40 @@ void generate_assignment(const char *var_name, t_ast_node *ast)
     }
 }
 
+void generate_global_assignment(const char *var_name, t_ast_node *ast)
+{
+    if (ast == NULL)
+    {
+        exit_with_error(ERR_INTERNAL, "Internal error: NULL AST in generate_global_assignment");
+    }
+
+    // Ak je to jednoduchý literál alebo premenná, priamo priradíme
+    if (ast->left == NULL && ast->right == NULL)
+    {
+        char value_str[512];
+        get_value_string(ast, value_str, sizeof(value_str));
+        printf("MOVE GF@__%s %s\n", var_name, value_str);
+    }
+    else
+    {
+        // Komplexný výraz - použijeme generate_expression_code
+        char result_var[256];
+        int err = generate_expression_code(ast, result_var, sizeof(result_var));
+        if (err)
+        {
+            exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate expression code");
+        }
+        // Presunieme výsledok do globálnej premennej
+        printf("MOVE GF@__%s %s\n", var_name, result_var);
+    }
+}
+
+void generate_push_global_variable(const char *var_name)
+{
+    // Globálna premenná už je deklarovaná na začiatku programu
+    printf("PUSHS GF@__%s\n", var_name);
+}
+
 /**
  * @brief Generuje začiatok if-else konštrukcie (vyhodnotenie podmienky)
  * @param condition_ast AST uzol s podmienkou
@@ -1084,19 +1317,33 @@ void generate_if_start(t_ast_node *condition_ast, int label_id)
         exit_with_error(ERR_INTERNAL, "Internal error: Failed to generate condition expression");
     }
 
-    // Uložíme výsledok podmienky do temporary premennej
-    printf("DEFVAR GF@%%if_cond_%d\n", label_id);
-    printf("MOVE GF@%%if_cond_%d %s\n", label_id, result_var);
+    // Vytvoríme pomocnú premennú pre podmienku (pridáme do zoznamu function vars)
+    char cond_var_name[64];
+    snprintf(cond_var_name, sizeof(cond_var_name), "__if_cond_%d", label_id);
+    symtable_add_function_var(global_symtable, cond_var_name);
+    
+    // Uložíme výsledok podmienky do lokálnej premennej
+    printf("MOVE LF@%s %s\n", cond_var_name, result_var);
 
-    // Kontrola pravdivosti podľa zadania:
-    // - null = false -> skok na else
-    // - bool@false = false -> skok na else
-    // - všetko ostatné = true -> pokračujeme do then vetvy
-
-    printf("JUMPIFEQ $$if_else_%d GF@%%if_cond_%d nil@nil\n", label_id, label_id);
-    printf("JUMPIFEQ $$if_else_%d GF@%%if_cond_%d bool@false\n", label_id, label_id);
-
-    // Ak podmienka je true, pokračujeme do then bloku (LABEL nasleduje)
+    // Rozlíšime dva prípady:
+    // 1. Jednoduchá premenná/literál (if (__a)): iba nil je falsy
+    // 2. Výraz s operátormi (if (a > b)): nil a false sú falsy
+    
+    bool is_simple_value = (condition_ast->left == NULL && condition_ast->right == NULL);
+    
+    if (is_simple_value)
+    {
+        // Pre jednoduchú premennú: iba nil je falsy
+        printf("JUMPIFEQ $$if_else_%d LF@%s nil@nil\n", label_id, cond_var_name);
+    }
+    else
+    {
+        // Pre výrazy s operátormi: nil a false sú falsy
+        printf("JUMPIFEQ $$if_else_%d LF@%s nil@nil\n", label_id, cond_var_name);
+        printf("JUMPIFEQ $$if_else_%d LF@%s bool@false\n", label_id, cond_var_name);
+    }
+    
+    // Ak podmienka je true, pokračujeme do then bloku (kód nasleduje)
 }
 
 /**

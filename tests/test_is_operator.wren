@@ -14,7 +14,8 @@ class Program {
         
         // Test 2: int variable is Num
         Ifj.write("\nTest 2: int variable is Num\n")
-        var intVal = 100
+        var intVal
+        intVal = 100
         if (intVal is Num) {
             Ifj.write("PASS: int variable is Num\n")
         } else {
@@ -31,7 +32,8 @@ class Program {
         
         // Test 4: float variable is Num
         Ifj.write("\nTest 4: float variable is Num\n")
-        var floatVal = 2.718
+        var floatVal
+        floatVal = 2.718
         if (floatVal is Num) {
             Ifj.write("PASS: float variable is Num\n")
         } else {
@@ -56,7 +58,8 @@ class Program {
         
         // Test 7: null variable is Null
         Ifj.write("\nTest 7: null variable is Null\n")
-        var nullVal = null
+        var nullVal
+        nullVal = null
         if (nullVal is Null) {
             Ifj.write("PASS: null variable is Null\n")
         } else {
@@ -89,7 +92,8 @@ class Program {
         
         // Test 11: string variable is String
         Ifj.write("\nTest 11: string variable is String\n")
-        var strVal = "world"
+        var strVal
+        strVal = "world"
         if (strVal is String) {
             Ifj.write("PASS: string variable is String\n")
         } else {
@@ -98,7 +102,8 @@ class Program {
         
         // Test 12: empty string is String
         Ifj.write("\nTest 12: empty string is String\n")
-        var emptyStr = ""
+        var emptyStr
+        emptyStr = ""
         if (emptyStr is String) {
             Ifj.write("PASS: empty string is String\n")
         } else {

@@ -61,8 +61,35 @@ static void get_param_value(t_ast_node *node, char *result, size_t result_size)
 
     case IDENTIFIER:
     {
-        // Need to check block ID for local variables
-        // Use the generator function that handles this
+        // Najprv skontrolujeme, či ide o getter
+        char *getter_mangled = mangle_getter_name(node->token->value.string);
+        if (getter_mangled != NULL)
+        {
+            t_avl_node *getter_node = symtable_search(get_global_symtable(), getter_mangled);
+            if (getter_node != NULL && getter_node->ifj_sym_type == SYM_GETTER)
+            {
+                // Je to getter - vygenerujeme volanie a výsledok uložíme do dočasnej premennej
+                int temp_id = get_next_temp_var();
+                char temp_var[64];
+                snprintf(temp_var, sizeof(temp_var), "__getter_result_%d", temp_id);
+                
+                // Pridáme dočasnú premennú do zoznamu funkčných premenných
+                symtable_add_function_var(get_global_symtable(), temp_var);
+                
+                // Zavoláme getter
+                printf("CALL $%s\n", getter_mangled);
+                
+                // Getter vráti hodnotu na zásobník, popneme ju do dočasnej premennej
+                printf("POPS LF@%s\n", temp_var);
+                
+                snprintf(result, result_size, "LF@%s", temp_var);
+                free(getter_mangled);
+                break;
+            }
+            free(getter_mangled);
+        }
+        
+        // Nie je to getter - hľadáme lokálnu premennú
         t_avl_node *var_node = symtable_search_var_scoped(get_global_symtable(), node->token->value.string);
         if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
         {

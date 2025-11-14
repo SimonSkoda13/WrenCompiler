@@ -36,6 +36,7 @@ typedef struct
 {
   bool ifj_defined;     // is variable defined?
   bool ifj_initialized; // is it initialized?
+  bool ifj_defvar_generated; // was DEFVAR generated? (for global vars)
   int ifj_scope_level;  // scope (0=global, higher=local)
   int ifj_nesting_level; // nesting level within function (0=params, 1+=nested blocks)
   int ifj_block_id;     // unique block ID for this variable
@@ -142,5 +143,15 @@ void symtable_add_function_var(t_symtable *ifj_table, const char *var_name_with_
 
 // Clear function variables list
 void symtable_clear_function_vars(t_symtable *ifj_table);
+
+// Check if identifier is a global variable (starts with __)
+bool symtable_is_global_var(const char *ifj_key);
+
+// Insert or update global variable
+// Returns true on success
+bool symtable_insert_global_var(t_symtable *ifj_table, const char *ifj_key, e_data_type ifj_data_type);
+
+// Mark global variable as initialized
+void symtable_mark_global_initialized(t_symtable *ifj_table, const char *ifj_key);
 
 #endif // SYMTABLE_H

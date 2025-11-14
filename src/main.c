@@ -33,23 +33,29 @@ int main(int argc, char *argv[])
     scanner.putback = 0;
     t_token current_token, putback_token;
     
-    /* initialize symbol table */
+    /* initialize symbol tables */
     t_symtable symtable;
+    t_symtable global_symtable;
     symtable_init(&symtable);
+    symtable_init(&global_symtable);
     
     parser.scanner = &scanner;
     parser.current_token = &current_token;
     parser.putback_token = &putback_token;  
     parser.has_putback = false;
     parser.symtable = &symtable;
+    parser.global_symtable = &global_symtable;
     
     // Nastavíme globálnu symtable pre generátor (pre gettery vo výrazoch)
     generator_set_symtable(&symtable);
+    // Nastavíme tabuľku pre globálne premenné (pre správne generovanie DEFVAR)
+    generator_set_global_symtable(&global_symtable);
     
     parse_program();
     
-    /* cleanup symbol table */
+    /* cleanup symbol tables */
     symtable_destroy(&symtable);
+    symtable_destroy(&global_symtable);
     
     return 0;
 }

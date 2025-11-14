@@ -23,7 +23,7 @@ class Program {
                 }
                 vysl = Ifj.floor(vysl)
                 vysl = Ifj.str(vysl)
-                //vysl = "Vysledek: " + vysl + "\n"
+                vysl = "Vysledek: " + vysl + "\n"
                 dm = Ifj.write(vysl)
             }
         } else { // a == null

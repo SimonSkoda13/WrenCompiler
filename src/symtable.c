@@ -1014,3 +1014,69 @@ void symtable_clear_function_vars(t_symtable *ifj_table)
   
   ifj_table->ifj_function_vars_count = 0;
 }
+
+bool symtable_is_global_var(const char *ifj_key)
+{
+  if (ifj_key == NULL || strlen(ifj_key) < 2)
+  {
+    return false;
+  }
+  
+  return (ifj_key[0] == '_' && ifj_key[1] == '_');
+}
+
+bool symtable_insert_global_var(t_symtable *ifj_table, const char *ifj_key, e_data_type ifj_data_type)
+{
+  if (ifj_table == NULL || ifj_key == NULL)
+  {
+    return false;
+  }
+  
+  // Check if already exists
+  t_avl_node *existing = symtable_search(ifj_table, ifj_key);
+  if (existing != NULL)
+  {
+    // Already exists - update type if needed
+    existing->ifj_data.ifj_var.ifj_type = ifj_data_type;
+    return true;
+  }
+  
+  // Insert new global variable
+  t_avl_node *ifj_new_root = insert_recursive(ifj_table->ifj_root, ifj_key, SYM_VAR_GLOBAL);
+  
+  if (ifj_new_root == NULL)
+  {
+    return false;
+  }
+  
+  ifj_table->ifj_root = ifj_new_root;
+  
+  // Set metadata for global variable
+  t_avl_node *ifj_inserted = symtable_search(ifj_table, ifj_key);
+  if (ifj_inserted != NULL)
+  {
+    ifj_inserted->ifj_data.ifj_var.ifj_type = ifj_data_type;
+    ifj_inserted->ifj_data.ifj_var.ifj_defined = true;
+    ifj_inserted->ifj_data.ifj_var.ifj_initialized = false;
+    ifj_inserted->ifj_data.ifj_var.ifj_defvar_generated = false;
+    ifj_inserted->ifj_data.ifj_var.ifj_scope_level = 0; // global scope
+    ifj_inserted->ifj_data.ifj_var.ifj_nesting_level = 0;
+    ifj_inserted->ifj_data.ifj_var.ifj_block_id = 0;
+  }
+  
+  return true;
+}
+
+void symtable_mark_global_initialized(t_symtable *ifj_table, const char *ifj_key)
+{
+  if (ifj_table == NULL || ifj_key == NULL)
+  {
+    return;
+  }
+  
+  t_avl_node *node = symtable_search(ifj_table, ifj_key);
+  if (node != NULL && node->ifj_sym_type == SYM_VAR_GLOBAL)
+  {
+    node->ifj_data.ifj_var.ifj_initialized = true;
+  }
+}
