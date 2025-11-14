@@ -1,3 +1,19 @@
+# Dokončiť do 18.11.2025-23:59 !!!
+
+Ak nemýlim už by mali byť implementované všetky konštrukcie ktoré msíme podľa zadania podporovať.
+
+**Ale ešte je problém multiline string!** Dáva to semantic error.
+
+**Sémantická anylýza stále nie je úplná!** A toto je asi najdôležitejšie čo treba urobiť. Musíme vracať **presné error kódy podľa zadania**
+automatické testy budú hodnotiť hlavne to! Takže prejsť zadanie a vyriešiť veci čo sa robí keď sa zavolá builtin funkcia s nesprávnym
+počtom parametrov alebo keď je v kóde `foo = 45 / "ss"` v takýchto jednoduchých prípadoch treba vrátiť error kód z parsera. Tiež kntrola
+redeklarácii a volania nedefinovaných premenných, funkcii a getterov/setterov
+
+**Dynamické kontroly za behu nie sú dokončné!** Zatiaľ je len pár základných pri builtin funkciách ale v zadání je toho o niečo viac.
+Treba pozrieť zadanie a ísť podľa toho.
+
+**A hocičo čo je v zadání a nám to nefunguje podľa neho!** Čítať zadnie keď neviem ako sa to má správať a nie dúfať že nejako bude
+
 ## michalik
 
 ## Task 3: Statement Parser (Recursive Descent)
@@ -39,32 +55,9 @@
 
 ## vrbiniak
 
-## Task 4: Semantic Analysis
-
-**Files:** `src/semantic.c`, `src/semantic.h`
-
-- Check undefined variables/functions (error 3)
-- Check redefinitions (error 4)
-- Check function argument counts (error 5)
-- Check type compatibility (error 6)
-- Handle function overloading
-
 ---
 
 ## Possible tasks
-
----
-
-## Task 5: Code Generator
-
-**Files:** `src/codegen.c`, `src/codegen.h`
-
-- Generate IFJcode25 instructions
-- Handle frames (GF, LF, TF)
-- Generate jumps, labels, function calls
-- Generate runtime type checks
-
----
 
 ## Task 7: Error Handling
 
@@ -130,7 +123,7 @@
   hocikde a môže sa volať funkcia ktorá je deklarovaná až ďalej v kóde
 - Treba dávať pozor aj na nesprávne volania funkcii (nesprávny počet prametrov alebo typ)
 - [x] Kontrolovať redeklarácie
-- Asi samostatná symtable pre globálne premenné ostatné musia byť podľa scope
+- [x] Asi samostatná symtable pre globálne premenné ostatné musia byť podľa scope
 - Treba pozrieť zadanie a prejsť si veci ktoré je treba detekovať semantickou analýzov (redekláracie, zlý počet parametrov, atď.)
 - Tiež treba trochu upraviť a vyčistiť vracanie error kódov. Zatiaľ som to nekontroloval takže vraciam error kódy ako mi ich
   navrhovalo takže to nebude úplne podľa zadania
@@ -148,12 +141,12 @@
       a myFunc(param1, param2) sú dve úplne rozdielne funkcie
 - [x] Statické gettery a settery nemám analyzované takže neviem povedať či tam bude nejkaký väčší ojeb alebo to bude zase len špecialny
       prípad funkcie
-- Globálne premenné nie sú vyriešené. Pri tomto to odhadujem na dve tabuľky symbolov (globálnu a lokálnu) a globálne premenné
-  riešiť v tej globálnej tabuľke
+- [x] Globálne premenné nie sú vyriešené. Pri tomto to odhadujem na dve tabuľky symbolov (globálnu a lokálnu) a globálne premenné
+      riešiť v tej globálnej tabuľke
 - [x] Bloky. Je to vysvetlené v democivku aký tu nastáva problém. Takže bude treba urobiť name-mangling pri vkladaní do tabuľky symbolov
       a potom získať aj správnu premennú z tabuľky podľa zanorenia
 - [x] Built-in funkcie. Tá funkcia Ifj.write je len jeden z pár špeciálnych prípadov kedy sa to dá riešiť takto. Bude treba podporovať
       aj iné builtin funkcie ktoré si však budeme musieť vygenerovať sami
-- Vyriešiť generáciu kodú pre operácie s reťazcami (+ \*)
+- [x] Vyriešiť generáciu kodú pre operácie s reťazcami (+ \*)
 - Typové kontroly za behu programu. Viz. zadanie
 - [x] Urobiť generovanie kódu pre ostatné koštrukcie (if, while, ...)
