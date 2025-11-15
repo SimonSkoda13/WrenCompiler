@@ -494,15 +494,17 @@ void generate_all_function_defvars()
 
 void generate_function_end(const char *func_name)
 {
-    // Ak funkcia nemala explicitný return, vrátime implicitný nil
-    if (strcmp(func_name, "main") != 0)
+    if (strcmp(func_name, "main") == 0)
     {
-        printf("PUSHS nil@nil\n");
+        // Main funkcia končí POPFRAME a EXIT
+        printf("POPFRAME\n");
+        printf("EXIT int@0\n");
     }
-    
-    printf("POPFRAME\n");
-    if (strcmp(func_name, "main") != 0)
+    else
     {
+        // Bežná funkcia - implicitný return nil
+        printf("PUSHS nil@nil\n");
+        printf("POPFRAME\n");
         printf("RETURN\n");
     }
     
@@ -672,6 +674,13 @@ void generate_move_retval_to_var(const char *var_name)
         // Global variable or parameter - use as is
         printf("POPS LF@%s\n", var_name);
     }
+}
+
+void generate_move_retval_to_global_var(const char *var_name)
+{
+    // Po návrate z funkcie je návratová hodnota na zásobníku
+    // Globálna premenná má prefix __
+    printf("POPS GF@__%s\n", var_name);
 }
 
 // Pomocná premenná pre generovanie dočasných premenných
@@ -1066,9 +1075,41 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     case OP_EQUALS:
     case OP_NOT_EQUALS:
     {
-        // Pre == a != použijeme priame porovnanie bez konverzie
-        // IFJcode25 EQ funguje aj pre rôzne typy (vráti false)
-        printf("EQ %s %s %s\n", result_var, left_var, right_var);
+        // Pre == a != musíme skonvertovať operandy na rovnaký typ
+        // IFJcode25 EQ vyžaduje rovnaké typy operandov
+        int type_tmp = get_next_temp_var();
+        char left_conv[64], right_conv[64], left_type[64], right_type[64];
+        snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", type_tmp);
+        snprintf(right_conv, sizeof(right_conv), "__conv_right_%d", type_tmp);
+        snprintf(left_type, sizeof(left_type), "__type_left_%d", type_tmp);
+        snprintf(right_type, sizeof(right_type), "__type_right_%d", type_tmp);
+        symtable_add_function_var(global_symtable, left_conv);
+        symtable_add_function_var(global_symtable, right_conv);
+        symtable_add_function_var(global_symtable, left_type);
+        symtable_add_function_var(global_symtable, right_type);
+
+        // Convert left operand to float if it's int
+        printf("MOVE LF@%s %s\n", left_conv, left_var);
+        printf("TYPE LF@%s LF@%s\n", left_type, left_conv);
+        printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", type_tmp, left_type);
+        printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", type_tmp, left_type);
+        printf("JUMP $$conv_left_done_%d\n", type_tmp);
+        printf("LABEL $$conv_left_is_int_%d\n", type_tmp);
+        printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
+        printf("LABEL $$conv_left_done_%d\n", type_tmp);
+
+        // Convert right operand to float if it's int
+        printf("MOVE LF@%s %s\n", right_conv, right_var);
+        printf("TYPE LF@%s LF@%s\n", right_type, right_conv);
+        printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", type_tmp, right_type);
+        printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", type_tmp, right_type);
+        printf("JUMP $$conv_right_done_%d\n", type_tmp);
+        printf("LABEL $$conv_right_is_int_%d\n", type_tmp);
+        printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
+        printf("LABEL $$conv_right_done_%d\n", type_tmp);
+
+        // Now perform EQ with converted operands
+        printf("EQ %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
         if (node->token->type == OP_NOT_EQUALS)
         {
             printf("NOT %s %s\n", result_var, result_var);
@@ -1583,27 +1624,48 @@ void generate_builtin_function_definitions()
     printf("DEFVAR LF@%%type2\n");
     printf("DEFVAR LF@%%len\n");
     printf("DEFVAR LF@%%cmp\n");
+    printf("DEFVAR LF@%%param2_int\n");
+    printf("DEFVAR LF@%%isint\n");
     printf("POPS LF@%%param2\n"); // Pop in reverse order
     printf("POPS LF@%%param1\n");
     printf("TYPE LF@%%type1 LF@%%param1\n");
     printf("TYPE LF@%%type2 LF@%%param2\n");
+    
+    // Check first parameter is string
     printf("JUMPIFEQ $$ord_type1_ok LF@%%type1 string@string\n");
     printf("EXIT int@25\n"); // Type error
     printf("LABEL $$ord_type1_ok\n");
-    printf("JUMPIFEQ $$ord_type2_ok LF@%%type2 string@int\n");
-    printf("EXIT int@25\n"); // Type error
+    
+    // Check second parameter is int or float
+    printf("JUMPIFEQ $$ord_param2_is_int LF@%%type2 string@int\n");
+    printf("JUMPIFEQ $$ord_param2_is_float LF@%%type2 string@float\n");
+    printf("EXIT int@25\n"); // Type error - not int or float
+    
+    // Convert float to int if it's a whole number
+    printf("LABEL $$ord_param2_is_float\n");
+    printf("ISINT LF@%%isint LF@%%param2\n");
+    printf("JUMPIFEQ $$ord_can_convert LF@%%isint bool@true\n");
+    printf("EXIT int@25\n"); // Float is not a whole number
+    printf("LABEL $$ord_can_convert\n");
+    printf("FLOAT2INT LF@%%param2_int LF@%%param2\n");
+    printf("JUMP $$ord_type2_ok\n");
+    
+    // Parameter is already int
+    printf("LABEL $$ord_param2_is_int\n");
+    printf("MOVE LF@%%param2_int LF@%%param2\n");
+    
     printf("LABEL $$ord_type2_ok\n");
     printf("STRLEN LF@%%len LF@%%param1\n");
-    printf("LT LF@%%cmp LF@%%param2 int@0\n");
+    printf("LT LF@%%cmp LF@%%param2_int int@0\n");
     printf("JUMPIFEQ $$ord_null LF@%%cmp bool@true\n");
-    printf("LT LF@%%cmp LF@%%param2 LF@%%len\n");
+    printf("LT LF@%%cmp LF@%%param2_int LF@%%len\n");
     printf("JUMPIFEQ $$ord_ok LF@%%cmp bool@true\n");
     printf("LABEL $$ord_null\n");
     printf("PUSHS nil@nil\n");
     printf("POPFRAME\n");
     printf("RETURN\n");
     printf("LABEL $$ord_ok\n");
-    printf("STRI2INT LF@%%result LF@%%param1 LF@%%param2\n");
+    printf("STRI2INT LF@%%result LF@%%param1 LF@%%param2_int\n");
     printf("PUSHS LF@%%result\n");
     printf("POPFRAME\n");
     printf("RETURN\n");

@@ -19,6 +19,21 @@
 #include "builtins.h"
 
 /**
+ * @struct Štruktúra pre tracking volaní funkcií (pre forward reference).
+ */
+typedef struct function_call_record {
+    char *func_name;
+    int arg_count;
+    int line_number;
+    struct function_call_record *next;
+} t_function_call_record;
+
+/**
+ * Globálny zoznam volaní funkcií pre validáciu na konci parsovania.
+ */
+extern t_function_call_record *function_calls_list;
+
+/**
  * @struct Štruktúra pre parser.
  */
 typedef struct
