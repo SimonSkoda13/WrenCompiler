@@ -705,7 +705,142 @@ void assign()
 {
     // Uložíme názov identifieru pred consume_token
     char *identifier = parser.current_token->value.string;
+    bool is_global = (parser.current_token->type == GLOBAL_VAR);
 
+    // Ak je to globálna premenná, spracujeme ju inak
+    if (is_global)
+    {
+        // Globálna premenná - automaticky ju pridáme do globálnej tabuľky ak neexistuje
+        symtable_insert_global_var(parser.global_symtable, identifier, TYPE_UNKNOWN);
+        
+        char *var_name = identifier;
+        consume_token(OP_ASSIGN); // '='
+        next_token();
+        
+        // Spracujeme výraz a vygenerujeme priradenie
+        t_ast_node *ast = NULL;
+        
+        // Kontrola či ide o volanie funkcie alebo výraz
+        if (parser.current_token->type == KEYWORD &&
+            parser.current_token->value.keyword == KW_IFJ)
+        {
+            // Built-in function call
+            consume_token(DOT);
+            consume_token(IDENTIFIER);
+            char *builtin_name = parser.current_token->value.string;
+            consume_token(LEFT_PAREN);
+
+            // Generate code to assign result to global variable
+            char result_var[512];
+            snprintf(result_var, sizeof(result_var), "GF@__%s", var_name);
+
+            // Globálna premenná už je deklarovaná na začiatku programu
+
+            // Process built-in function based on type
+            if (strcmp(builtin_name, "write") == 0)
+            {
+                // write returns null
+                next_token();
+                t_ast_node *param = parse_builtin_param();
+                generate_builtin_write(param);
+                printf("MOVE %s nil@nil\n", result_var);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "read_str") == 0)
+            {
+                generate_builtin_read_str(result_var);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "read_num") == 0)
+            {
+                generate_builtin_read_num(result_var);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "floor") == 0)
+            {
+                next_token();
+                t_ast_node *param = parse_builtin_param();
+                generate_builtin_floor(result_var, param);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "str") == 0)
+            {
+                next_token();
+                t_ast_node *param = parse_builtin_param();
+                generate_builtin_str(result_var, param);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "length") == 0)
+            {
+                next_token();
+                t_ast_node *param = parse_builtin_param();
+                generate_builtin_length(result_var, param);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "chr") == 0)
+            {
+                next_token();
+                t_ast_node *param = parse_builtin_param();
+                generate_builtin_chr(result_var, param);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "ord") == 0)
+            {
+                next_token();
+                t_ast_node *param1 = parse_builtin_param();
+                consume_token(COMMA);
+                next_token();
+                t_ast_node *param2 = parse_builtin_param();
+                generate_builtin_ord(result_var, param1, param2);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "substring") == 0)
+            {
+                next_token();
+                t_ast_node *param1 = parse_builtin_param();
+                consume_token(COMMA);
+                next_token();
+                t_ast_node *param2 = parse_builtin_param();
+                consume_token(COMMA);
+                next_token();
+                t_ast_node *param3 = parse_builtin_param();
+                generate_builtin_substring(result_var, param1, param2, param3);
+                consume_token(RIGHT_PAREN);
+            }
+            else if (strcmp(builtin_name, "strcmp") == 0)
+            {
+                next_token();
+                t_ast_node *param1 = parse_builtin_param();
+                consume_token(COMMA);
+                next_token();
+                t_ast_node *param2 = parse_builtin_param();
+                generate_builtin_strcmp(result_var, param1, param2);
+                consume_token(RIGHT_PAREN);
+            }
+            else
+            {
+                exit_with_error(ERR_SEM_UNDEF,
+                                "Semantic error: Unknown built-in function '%s' at line %d",
+                                builtin_name, parser.scanner->line);
+            }
+            
+            consume_token(EOL);
+        }
+        else
+        {
+            // Výraz
+            ast = expression(parser.current_token, NULL);
+            generate_global_assignment(var_name, ast);
+            
+            // Mark as initialized
+            symtable_mark_global_initialized(parser.global_symtable, var_name);
+            
+            check_token(EOL);
+        }
+        return;
+    }
+
+    // Lokálna premenná alebo setter
     // Skontrolujeme či to môže byť setter
     char *setter_mangled = mangle_setter_name(identifier);
     t_avl_node *setter_node = NULL;
@@ -747,6 +882,12 @@ void assign()
             }
             generate_push_variable(parser.current_token->value.string);
         }
+        else if (parser.current_token->type == GLOBAL_VAR)
+        {
+            // Globálna premenná - automaticky existuje
+            symtable_insert_global_var(parser.global_symtable, parser.current_token->value.string, TYPE_UNKNOWN);
+            generate_push_global_variable(parser.current_token->value.string);
+        }
         else if (parser.current_token->type == KEYWORD &&
                  (parser.current_token->value.keyword == KW_NULL_TYPE ||
                   parser.current_token->value.keyword == KW_NULL_INST))
@@ -767,7 +908,7 @@ void assign()
         return;
     }
 
-    // Nie je to setter - musí to byť premenná (hľadáme s najvyšším nesting levelom)
+    // Nie je to setter - musí to byť lokálna premenná (hľadáme s najvyšším nesting levelom)
     t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, identifier);
     if (var_node == NULL)
     {
@@ -1038,14 +1179,15 @@ void return_statement()
     if (parser.current_token->type == EOL)
     {
         // Prázdny return - vrátime null
-        generate_return_value(NULL);
+        generate_return_statement(NULL);
     }
     else
     {
         // Return s výrazom - získame AST a vygenerujeme kód
         t_ast_node *ast = expression(parser.current_token, NULL);
-        generate_return_value(ast);
+        generate_return_statement(ast);
     }
+    
     check_token(EOL);
 }
 
@@ -1222,6 +1364,11 @@ int arg_list()
                             parser.current_token->value.string, parser.scanner->line);
         }
         generate_push_variable(parser.current_token->value.string);
+    }
+    else if (parser.current_token->type == GLOBAL_VAR)
+    {
+        // Globálna premenná - automaticky existuje, môže byť null ak nie je inicializovaná
+        generate_push_global_variable(parser.current_token->value.string);
     }
     else if (parser.current_token->type == KEYWORD &&
              (parser.current_token->value.keyword == KW_NULL_TYPE ||
@@ -1442,9 +1589,9 @@ void eols()
 void parse_program()
 {
     prolog();
-    generate_header();
-    generate_builtin_function_definitions();
-    program();
+    generate_header();  // .IFJcode25 + JUMP $$main
+    generate_builtin_function_definitions();  // Builtin funkcie
+    program();          // Parsuje a generuje user funkcie (okrem main ktorý sa bufferuje)
     next_token();
     eols();
     consume_token(END_OF_FILE);
@@ -1464,22 +1611,4 @@ void parse_program()
                         "Semantic error: 'main' must be a function, not a getter or setter");
     }
 
-    // Ak sme generovali main do bufferu, vypíšeme ho teraz na konci
-    if (main_output_buffer != NULL)
-    {
-        // Vrátime sa na začiatok bufferu
-        rewind(main_output_buffer);
-
-        // Prečítame a vypíšeme obsah bufferu
-        char buffer[4096];
-        size_t bytes_read;
-        while ((bytes_read = fread(buffer, 1, sizeof(buffer), main_output_buffer)) > 0)
-        {
-            fwrite(buffer, 1, bytes_read, stdout);
-        }
-
-        // Zatvoríme a uvoľníme buffer
-        fclose(main_output_buffer);
-        main_output_buffer = NULL;
-    }
 }

@@ -27,7 +27,8 @@ typedef struct
     t_token *current_token;
     t_token *putback_token;
     bool has_putback;
-    t_symtable *symtable; // Tabuľka symbolov
+    t_symtable *symtable; // Tabuľka symbolov pre lokálne premenné a funkcie
+    t_symtable *global_symtable; // Samostatná tabuľka symbolov pre globálne premenné
 } t_parser;
 
 /**

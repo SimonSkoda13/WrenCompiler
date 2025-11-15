@@ -93,6 +93,18 @@ void generator_set_symtable(t_symtable *ifj_symtable);
 t_symtable *get_global_symtable();
 
 /**
+ * @brief Nastaví tabuľku pre globálne premenné (pre správne generovanie DEFVAR)
+ * @param global_table Ukazovateľ na globálnu tabuľku symbolov
+ */
+void generator_set_global_symtable(t_symtable *global_table);
+
+/**
+ * @brief Vygeneruje DEFVAR pre globálnu premennú len ak ešte nebola deklarovaná
+ * @param var_name Názov globálnej premennej (vrátane __)
+ */
+void generate_global_defvar_once(const char *var_name);
+
+/**
  * @brief Generuje hlavičku programu (.IFJcode25)
  */
 void generate_header();
@@ -101,6 +113,11 @@ void generate_header();
  * @brief Generuje definície všetkých builtin funkcií ako callable subroutines
  */
 void generate_builtin_function_definitions();
+
+/**
+ * @brief Generuje deklarácie všetkých globálnych premenných (DEFVAR GF@__varname)
+ */
+void generate_global_variables_declarations();
 
 /**
  * @brief Generuje kód pre výpis string literálu (WRITE string@...)
@@ -147,10 +164,16 @@ void end_function_body_buffering();
 void generate_function_end(const char *func_name);
 
 /**
- * @brief Generuje kód pre návratovú hodnotu funkcie (pushnutie na zásobník)
+ * @brief Generuje kód pre návratovú hodnotu funkcie (pushne ju na zásobník)
  * @param ast AST strom výrazu ktorý sa má vrátiť (NULL pre prázdny return)
  */
 void generate_return_value(t_ast_node *ast);
+
+/**
+ * @brief Generuje kompletný return statement (pushne hodnotu, POPFRAME, RETURN)
+ * @param ast AST strom výrazu ktorý sa má vrátiť (NULL pre prázdny return)
+ */
+void generate_return_statement(t_ast_node *ast);
 
 /**
  * @brief Generuje kód pre pushnutie argumentu na zásobník
@@ -214,6 +237,19 @@ void generate_move_retval_to_var(const char *var_name);
 void generate_assignment(const char *var_name, t_ast_node *ast);
 
 /**
+ * @brief Generuje kód pre priradenie výrazu do globálnej premennej
+ * @param var_name Názov globálnej premennej (vrátane __)
+ * @param ast AST strom výrazu
+ */
+void generate_global_assignment(const char *var_name, t_ast_node *ast);
+
+/**
+ * @brief Generuje kód pre push globálnej premennej na zásobník
+ * @param var_name Názov globálnej premennej (vrátane __)
+ */
+void generate_push_global_variable(const char *var_name);
+
+/**
  * @brief Pomocná funkcia pre vytvorenie hodnoty (literálu alebo premennej) pre inštrukcie
  * @param node AST uzol
  * @param result Buffer pre výsledok (formát "int@123", "string@...", "LF@var")
@@ -244,6 +280,22 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
  * @return Unikátne číslo pre label
  */
 int get_next_label_id(void);
+
+/**
+ * @brief Zaregistruje pomocnú premennú pre neskôr vygenerované DEFVAR
+ * @param var_name Celý názov premennej vrátane rámca (napr. "GF@%if_cond_0")
+ */
+void register_helper_var(const char *var_name);
+
+/**
+ * @brief Vygeneruje DEFVAR pre všetky zaregistrované pomocné premenné
+ */
+void generate_helper_defvars(void);
+
+/**
+ * @brief Vyčistí zoznam pomocných premenných
+ */
+void clear_helper_vars(void);
 
 /**
  * @brief Generuje začiatok if-else konštrukcie (vyhodnotenie podmienky)
