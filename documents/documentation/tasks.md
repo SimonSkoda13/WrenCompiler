@@ -1,8 +1,8 @@
 # Dokončiť do 18.11.2025-23:59 !!!
 
-Ak nemýlim už by mali byť implementované všetky konštrukcie ktoré msíme podľa zadania podporovať.
+Ak nemýlim už by mali byť implementované všetky konštrukcie ktoré musíme podľa zadania podporovať.
 
-**Ale ešte je problém multiline string!** Dáva to semantic error.
+~~**Ale ešte je problém multiline string!** Dáva to semantic error.~~
 
 **Sémantická anylýza stále nie je úplná!** A toto je asi najdôležitejšie čo treba urobiť. Musíme vracať **presné error kódy podľa zadania**
 automatické testy budú hodnotiť hlavne to! Takže prejsť zadanie a vyriešiť veci čo sa robí keď sa zavolá builtin funkcia s nesprávnym
@@ -148,5 +148,5 @@ Treba pozrieť zadanie a ísť podľa toho.
 - [x] Built-in funkcie. Tá funkcia Ifj.write je len jeden z pár špeciálnych prípadov kedy sa to dá riešiť takto. Bude treba podporovať
       aj iné builtin funkcie ktoré si však budeme musieť vygenerovať sami
 - [x] Vyriešiť generáciu kodú pre operácie s reťazcami (+ \*)
-- Typové kontroly za behu programu. Viz. zadanie
+- **Typové kontroly za behu programu. Viz. zadanie**
 - [x] Urobiť generovanie kódu pre ostatné koštrukcie (if, while, ...)
