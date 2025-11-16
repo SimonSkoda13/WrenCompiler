@@ -222,6 +222,102 @@ int correct_syntax(t_stack *stack) {
             stack->top->next_element->next_element->data == PREC_EMPTY);
 }
 
+// Helper function to check if AST node is a literal (not variable or complex expression)
+int is_literal(t_ast_node *node) {
+    if (node == NULL || node->token == NULL) {
+        return 0;
+    }
+    // Literal if it's a leaf node (no children) and is a literal type
+    return (node->left == NULL && node->right == NULL &&
+            (node->token->type == NUM_INT || 
+             node->token->type == NUM_EXP_INT ||
+             node->token->type == NUM_HEX ||
+             node->token->type == NUM_FLOAT ||
+             node->token->type == NUM_EXP_FLOAT ||
+             node->token->type == STRING_LITERAL ||
+             (node->token->type == KEYWORD && node->token->value.keyword == KW_NULL_INST)));
+}
+
+// Helper function to get literal type category: 0=unknown, 1=number, 2=string, 3=null
+int get_literal_type_category(t_ast_node *node) {
+    if (!is_literal(node)) {
+        return 0; // Not a literal
+    }
+    
+    if (node->token->type == NUM_INT || 
+             node->token->type == NUM_EXP_INT ||
+             node->token->type == NUM_HEX ||
+             node->token->type == NUM_FLOAT ||
+             node->token->type == NUM_EXP_FLOAT) {
+        return 1; // Number
+    } else if (node->token->type == STRING_LITERAL) {
+        return 2; // String
+    } else if (node->token->type == KEYWORD && node->token->value.keyword == KW_NULL_INST) {
+        return 3; // Null
+    }
+    return 0;
+}
+
+// Check if node is a valid type keyword for 'is' operator (Num, String, or Null)
+int is_valid_type_keyword(t_ast_node *node) {
+    if (node == NULL || node->token == NULL) {
+        return 0;
+    }
+    
+    // Must be a leaf node (no children) and a keyword
+    if (node->left != NULL || node->right != NULL || node->token->type != KEYWORD) {
+        return 0;
+    }
+    
+    // Must be one of the type keywords
+    e_keyword kw = node->token->value.keyword;
+    return (kw == KW_NUM || kw == KW_STRING || kw == KW_NULL_TYPE);
+}
+
+// Type check for binary operations on literals
+void check_binary_literal_types(e_token_type operator, t_ast_node *left, t_ast_node *right) {
+    int left_type = get_literal_type_category(left);
+    int right_type = get_literal_type_category(right);
+    
+    // Special check for 'is' operator - right side must be a type keyword
+    if (operator == OP_IS) {
+        if (!is_valid_type_keyword(right)) {
+            exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Right operand of 'is' must be Num, String, or Null");
+        }
+        return;
+    }
+    
+    // If neither is a literal, we can't check statically
+    if (left_type == 0 && right_type == 0) {
+        return;
+    }
+    
+    // Type checking based on operator
+    if (operator == OP_ADD) {
+        // Addition: string + string OK, number + number OK, but string + number ERROR
+        if ((left_type == 2 && right_type == 1) || (left_type == 1 && right_type == 2)) {
+            exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Cannot add string and number");
+        }
+    } else if (operator == OP_MUL) {
+        // Multiplication: number * number OK, string * number OK, but number * string ERROR, string * string ERROR
+        if ((left_type == 1 && right_type == 2) || (left_type == 2 && right_type == 2)) {
+            exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Invalid types for multiplication");
+        }
+    } else if (operator == OP_SUB || operator == OP_DIV) {
+        // Subtraction and division: only number - number or number / number
+        if ((left_type != 0 && left_type != 1) || (right_type != 0 && right_type != 1)) {
+            exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Subtraction and division require numeric operands");
+        }
+    } else if (operator == OP_LESS_THAN || operator == OP_LESS_EQUAL || 
+               operator == OP_GREATER_THAN || operator == OP_GREATER_THAN_EQUAL) {
+        // Relational operators (except == and !=): both operands must be numbers
+        if ((left_type != 0 && left_type != 1) || (right_type != 0 && right_type != 1)) {
+            exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Relational operators require numeric operands");
+        }
+    }
+    // For == and != operators, we allow mixed types (runtime will handle)
+}
+
 int rule_reduction(t_stack *stack) {
     t_stack_exp stack_data[4];
     for (int j = 0; j < 4; j++) {
@@ -265,41 +361,49 @@ if (stack_data[0]->data == PREC_E && stack_data[2]->data == PREC_E) {
     switch (stack_data[1]->data) {
         case PREC_PLUS:
             operator->type = OP_ADD;
+            check_binary_literal_types(OP_ADD, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
         case PREC_MUL:
             operator->type = OP_MUL;
+            check_binary_literal_types(OP_MUL, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
         case PREC_DIV:
             operator->type = OP_DIV;
+            check_binary_literal_types(OP_DIV, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
         case PREC_GREATER:
             operator->type = OP_GREATER_THAN;
+            check_binary_literal_types(OP_GREATER_THAN, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
         case PREC_GREATEREQ:
             operator->type = OP_GREATER_THAN_EQUAL;
+            check_binary_literal_types(OP_GREATER_THAN_EQUAL, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
         case PREC_LESS:
             operator->type = OP_LESS_THAN;
+            check_binary_literal_types(OP_LESS_THAN, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
         case PREC_LESSEQ:
             operator->type = OP_LESS_EQUAL;
+            check_binary_literal_types(OP_LESS_EQUAL, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
         case PREC_MINUS:
             operator->type = OP_SUB;
+            check_binary_literal_types(OP_SUB, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;
@@ -315,6 +419,7 @@ if (stack_data[0]->data == PREC_E && stack_data[2]->data == PREC_E) {
             break;
         case PREC_IS:
             operator->type = OP_IS;
+            check_binary_literal_types(OP_IS, stack_data[2]->tree, stack_data[0]->tree);
             tree_ptr = ast_create(operator, stack_data[2]->tree,
                                     stack_data[0]->tree);
             break;

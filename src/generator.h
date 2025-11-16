@@ -336,4 +336,6 @@ void generate_while_condition(t_ast_node *condition_ast, int label_id);
  */
 void generate_while_end(int label_id);
 
+int get_next_temp_var();
+
 #endif // WRENCOMPILER_GENERATOR_H

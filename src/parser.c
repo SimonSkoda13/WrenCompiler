@@ -204,6 +204,13 @@ void next_token()
     int lex_result = get_next_token(parser.scanner, parser.current_token);
     if (lex_result == 1)
     {
+        if (err_code == ERR_INTERNAL)
+        {
+            exit_with_error(ERR_INTERNAL,
+                            "Internal error encountered while getting next token at line %d",
+                            parser.scanner->line);
+        }
+        
         exit_with_error(ERR_LEXICAL,
                         "Lexical error encountered while getting next token at line %d",
                         parser.scanner->line);
@@ -775,6 +782,53 @@ static t_ast_node *parse_builtin_param()
     return param_ast;
 }
 
+/**
+ * Skontroluje, či je parameter číselného typu.
+ * Ak je check_is_int true, skontroluje, či je parameter celého čísla
+ */
+void check_num_param(t_ast_node *param, bool check_is_int)
+{
+    if (param->token->type != NUM_INT &&
+        param->token->type != NUM_EXP_INT &&
+        param->token->type != NUM_FLOAT &&
+        param->token->type != NUM_EXP_FLOAT &&
+        param->token->type != NUM_HEX &&
+        param->token->type != IDENTIFIER &&
+        param->token->type != GLOBAL_VAR)
+    {
+        exit_with_error(ERR_SEM_PARAMS, "Semantic error: Expected numeric parameter at line %d",
+                        parser.scanner->line);
+    }
+
+    if (check_is_int)
+    {
+        if (param->token->type != NUM_INT &&
+            param->token->type != NUM_EXP_INT &&
+            param->token->type != NUM_HEX &&
+            param->token->type != IDENTIFIER &&
+            param->token->type != GLOBAL_VAR)
+        {
+            exit_with_error(ERR_SEM_TYPE_COMPAT, "Semantic error: Expected numeric parameter at line %d",
+                            parser.scanner->line);
+        }
+    }
+    
+}
+
+/**
+ * Skontroluje, či je parameter typu string.
+ */
+void check_string_param(t_ast_node *param)
+{
+    if (param->token->type != STRING_LITERAL &&
+        param->token->type != IDENTIFIER &&
+        param->token->type != GLOBAL_VAR)
+    {
+        exit_with_error(ERR_SEM_PARAMS, "Semantic error: Expected string parameter at line %d",
+                        parser.scanner->line);
+    }
+}
+
 void assign()
 {
     // Uložíme názov identifieru pred consume_token
@@ -834,6 +888,7 @@ void assign()
             {
                 next_token();
                 t_ast_node *param = parse_builtin_param();
+                check_num_param(param, false);
                 generate_builtin_floor(result_var, param);
                 consume_token(RIGHT_PAREN);
             }
@@ -841,6 +896,7 @@ void assign()
             {
                 next_token();
                 t_ast_node *param = parse_builtin_param();
+                check_string_param(param);
                 generate_builtin_str(result_var, param);
                 consume_token(RIGHT_PAREN);
             }
@@ -848,6 +904,7 @@ void assign()
             {
                 next_token();
                 t_ast_node *param = parse_builtin_param();
+                check_string_param(param);
                 generate_builtin_length(result_var, param);
                 consume_token(RIGHT_PAREN);
             }
@@ -855,6 +912,7 @@ void assign()
             {
                 next_token();
                 t_ast_node *param = parse_builtin_param();
+                check_num_param(param, true);
                 generate_builtin_chr(result_var, param);
                 consume_token(RIGHT_PAREN);
             }
@@ -862,9 +920,11 @@ void assign()
             {
                 next_token();
                 t_ast_node *param1 = parse_builtin_param();
+                check_string_param(param1);
                 consume_token(COMMA);
                 next_token();
                 t_ast_node *param2 = parse_builtin_param();
+                check_num_param(param2, true);
                 generate_builtin_ord(result_var, param1, param2);
                 consume_token(RIGHT_PAREN);
             }
@@ -872,12 +932,15 @@ void assign()
             {
                 next_token();
                 t_ast_node *param1 = parse_builtin_param();
+                check_string_param(param1);
                 consume_token(COMMA);
                 next_token();
                 t_ast_node *param2 = parse_builtin_param();
+                check_num_param(param2, true);
                 consume_token(COMMA);
                 next_token();
                 t_ast_node *param3 = parse_builtin_param();
+                check_num_param(param3, true);
                 generate_builtin_substring(result_var, param1, param2, param3);
                 consume_token(RIGHT_PAREN);
             }
@@ -885,9 +948,11 @@ void assign()
             {
                 next_token();
                 t_ast_node *param1 = parse_builtin_param();
+                check_string_param(param1);
                 consume_token(COMMA);
                 next_token();
                 t_ast_node *param2 = parse_builtin_param();
+                check_string_param(param2);
                 generate_builtin_strcmp(result_var, param1, param2);
                 consume_token(RIGHT_PAREN);
             }
@@ -1083,6 +1148,7 @@ void assign()
         {
             next_token();
             t_ast_node *param = parse_builtin_param();
+            check_num_param(param, false);
             generate_builtin_floor(result_var, param);
             consume_token(RIGHT_PAREN);
         }
@@ -1097,6 +1163,7 @@ void assign()
         {
             next_token();
             t_ast_node *param = parse_builtin_param();
+            check_string_param(param);
             generate_builtin_length(result_var, param);
             consume_token(RIGHT_PAREN);
         }
@@ -1104,6 +1171,7 @@ void assign()
         {
             next_token();
             t_ast_node *param = parse_builtin_param();
+            check_num_param(param, true);
             generate_builtin_chr(result_var, param);
             consume_token(RIGHT_PAREN);
         }
@@ -1111,9 +1179,11 @@ void assign()
         {
             next_token();
             t_ast_node *param1 = parse_builtin_param();
+            check_string_param(param1);
             consume_token(COMMA);
             next_token();
             t_ast_node *param2 = parse_builtin_param();
+            check_num_param(param2, true);
             generate_builtin_ord(result_var, param1, param2);
             consume_token(RIGHT_PAREN);
         }
@@ -1121,12 +1191,15 @@ void assign()
         {
             next_token();
             t_ast_node *param1 = parse_builtin_param();
+            check_string_param(param1);
             consume_token(COMMA);
             next_token();
             t_ast_node *param2 = parse_builtin_param();
+            check_num_param(param2, true);
             consume_token(COMMA);
             next_token();
             t_ast_node *param3 = parse_builtin_param();
+            check_num_param(param3, true);
             generate_builtin_substring(result_var, param1, param2, param3);
             consume_token(RIGHT_PAREN);
         }
@@ -1134,9 +1207,11 @@ void assign()
         {
             next_token();
             t_ast_node *param1 = parse_builtin_param();
+            check_string_param(param1);
             consume_token(COMMA);
             next_token();
             t_ast_node *param2 = parse_builtin_param();
+            check_string_param(param2);
             generate_builtin_strcmp(result_var, param1, param2);
             consume_token(RIGHT_PAREN);
         }
@@ -1309,7 +1384,7 @@ void func_call()
         {
             // Ifj.write(term) - výpis hodnoty
             next_token();
-            t_ast_node *param = parse_builtin_param();
+            t_ast_node *param = parse_builtin_param(IDENTIFIER);
             generate_builtin_write(param);
             consume_token(RIGHT_PAREN);
         }

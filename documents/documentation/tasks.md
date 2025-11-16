@@ -4,15 +4,18 @@ Ak nemýlim už by mali byť implementované všetky konštrukcie ktoré musíme
 
 ~~**Ale ešte je problém multiline string!** Dáva to semantic error.~~
 
-**Sémantická anylýza stále nie je úplná!** A toto je asi najdôležitejšie čo treba urobiť. Musíme vracať **presné error kódy podľa zadania**
-automatické testy budú hodnotiť hlavne to! Takže prejsť zadanie a vyriešiť veci čo sa robí keď sa zavolá builtin funkcia s nesprávnym
-počtom parametrov alebo keď je v kóde `foo = 45 / "ss"` v takýchto jednoduchých prípadoch treba vrátiť error kód z parsera. Tiež kntrola
-redeklarácii a volania nedefinovaných premenných, funkcii a getterov/setterov
+~~**Sémantická anylýza stále nie je úplná!** A toto je asi najdôležitejšie čo treba urobiť. Musíme vracať **presné error kódy podľa zadania**automatické testy budú hodnotiť hlavne to! Takže prejsť zadanie a vyriešiť veci čo sa robí keď sa zavolá builtin funkcia s nesprávnym počtom parametrov alebo keď je v kóde `foo = 45 / "ss"` v takýchto jednoduchých prípadoch treba vrátiť error kód z parsera. Tiež kntrolaredeklarácii a volania nedefinovaných premenných, funkcii a getterov/setterov~~
 
-**Dynamické kontroly za behu nie sú dokončné!** Zatiaľ je len pár základných pri builtin funkciách ale v zadání je toho o niečo viac.
-Treba pozrieť zadanie a ísť podľa toho.
+~~**Dynamické kontroly za behu nie sú dokončné!** Zatiaľ je len pár základných pri builtin funkciách ale v zadání je toho o niečo viac.Treba pozrieť zadanie a ísť podľa toho.~~
 
 **A hocičo čo je v zadání a nám to nefunguje podľa neho!** Čítať zadnie keď neviem ako sa to má správať a nie dúfať že nejako bude
+
+**Projekt je teraz v stave že sa môže odovzdať. Stále ostávajú nejaké edge-case ktoré som sa rozhodol mať piči**
+
+1. Ak sa vo výraze použije globálna premenná a nebola použitá predtým. Napríklad keď mám `foo = 5 + __a` kde `foo` je nejáka definovaná premenná a `__a` je globálna premenná ale je tu použitá prvý-krát v programe tak to spadne pri interpretácii. Správne by sa tu malo vyhodnotiť ako `foo = 5 + null` a tým pádom chyba 26.
+2. V zadaní je definovaná chyba 10 ako _ostatní sémantické chyby_ nenapadlo ma kde k tomuto dochádza a jedinné čo ma napadá je dávať túto chybu ako default keď sa nenájde iná vhodná možnosť. Kto chce môže sa na to pozrieť a nejako to implementovať.
+3. Nejaké veci sa riešili aj na Discorde ale zdalo sa mi že implemntovať také kontroly by dalo dosť práce tak sa spolieham na _to testovať nebudú..._
+4. K bodu 2. Zistil som že to nejako zachytávame napríklad keď je v programe prazdny if `if() {...}` ale aj tak by sa na to chcelo pozrieť podrobnejšie.
 
 ## michalik
 
