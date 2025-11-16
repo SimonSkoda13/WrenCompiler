@@ -228,6 +228,7 @@ void generate_setter_call(const char *setter_name);
  * @param var_name Názov premennej do ktorej sa priradí návratová hodnota
  */
 void generate_move_retval_to_var(const char *var_name);
+void generate_move_retval_to_global_var(const char *var_name);
 
 /**
  * @brief Generuje kód pre priradenie výrazu do premennej

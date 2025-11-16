@@ -14,6 +14,80 @@ t_parser parser;
 FILE *main_output_buffer = NULL;
 bool is_generating_main = false;
 
+// Globálny zoznam volaní funkcií pre validáciu
+t_function_call_record *function_calls_list = NULL;
+
+/**
+ * Pridá záznam o volaní funkcie do zoznamu.
+ */
+void record_function_call(const char *func_name, int arg_count, int line_number)
+{
+    t_function_call_record *record = malloc(sizeof(t_function_call_record));
+    if (record == NULL)
+    {
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to allocate memory for function call record");
+    }
+    
+    record->func_name = strdup(func_name);
+    if (record->func_name == NULL)
+    {
+        free(record);
+        exit_with_error(ERR_INTERNAL, "Internal error: Failed to duplicate function name");
+    }
+    
+    record->arg_count = arg_count;
+    record->line_number = line_number;
+    record->next = function_calls_list;
+    function_calls_list = record;
+}
+
+/**
+ * Validuje všetky zaznamenané volania funkcií.
+ */
+void validate_function_calls()
+{
+    t_function_call_record *current = function_calls_list;
+    
+    while (current != NULL)
+    {
+        char *mangled_name = mangle_function_name(current->func_name, current->arg_count);
+        if (mangled_name == NULL)
+        {
+            exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
+        }
+        
+        t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
+        free(mangled_name);
+        
+        if (func_node == NULL)
+        {
+            exit_with_error(ERR_SEM_UNDEF,
+                            "Semantic error: Function '%s' with %d parameters is not defined at line %d",
+                            current->func_name, current->arg_count, current->line_number);
+        }
+        
+        current = current->next;
+    }
+}
+
+/**
+ * Uvoľní pamäť zoznamu volaní funkcií.
+ */
+void free_function_calls_list()
+{
+    t_function_call_record *current = function_calls_list;
+    
+    while (current != NULL)
+    {
+        t_function_call_record *next = current->next;
+        free(current->func_name);
+        free(current);
+        current = next;
+    }
+    
+    function_calls_list = NULL;
+}
+
 // DEBUG
 void ast_print_tree(t_ast_node *node, int depth)
 {
@@ -826,6 +900,50 @@ void assign()
             
             consume_token(EOL);
         }
+        else if (parser.current_token->type == IDENTIFIER)
+        {
+            // Môže to byť volanie funkcie alebo výraz - potrebujeme lookahead
+            t_token saved_identifier = *parser.current_token;
+            next_token();
+
+            if (parser.current_token->type == LEFT_PAREN)
+            {
+                // Volanie užívateľskej funkcie: identifier(...)
+                putback_token(); // Put back '('
+                *parser.current_token = saved_identifier;
+
+                char *func_name = parser.current_token->value.string;
+
+                consume_token(LEFT_PAREN);
+                int arg_count = arg_list();
+                check_token(RIGHT_PAREN);
+
+                // Zaznamenáme volanie funkcie pre neskoršiu validáciu
+                record_function_call(func_name, arg_count, parser.scanner->line);
+
+                // Vygenerujeme volanie funkcie s počtom argumentov
+                generate_function_call(func_name, arg_count);
+
+                // Skopírujeme návratovú hodnotu do globálnej premennej
+                generate_move_retval_to_global_var(var_name);
+
+                // Mark as initialized
+                symtable_mark_global_initialized(parser.global_symtable, var_name);
+
+                consume_token(EOL);
+            }
+            else
+            {
+                // Výraz začínajúci identifikátorom
+                ast = expression(&saved_identifier, parser.current_token);
+                generate_global_assignment(var_name, ast);
+                
+                // Mark as initialized
+                symtable_mark_global_initialized(parser.global_symtable, var_name);
+                
+                check_token(EOL);
+            }
+        }
         else
         {
             // Výraz
@@ -1049,22 +1167,8 @@ void assign()
             int arg_count = arg_list();
             check_token(RIGHT_PAREN);
 
-            // Skontrolujeme či funkcia s touto aritou existuje
-            char *mangled_name = mangle_function_name(func_name, arg_count);
-            if (mangled_name == NULL)
-            {
-                exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
-            }
-
-            t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
-            free(mangled_name);
-
-            if (func_node == NULL)
-            {
-                exit_with_error(ERR_SEM_UNDEF,
-                                "Semantic error: Function '%s' with %d parameters is not defined at line %d",
-                                func_name, arg_count, parser.scanner->line);
-            }
+            // Zaznamenáme volanie funkcie pre neskoršiu validáciu
+            record_function_call(func_name, arg_count, parser.scanner->line);
 
             // Vygenerujeme volanie funkcie s počtom argumentov
             generate_function_call(func_name, arg_count);
@@ -1285,21 +1389,8 @@ void func_call()
         if (parser.current_token->type == EOL)
         {
             // Static getter - 0 parametrov
-            char *mangled_name = mangle_function_name(func_name, 0);
-            if (mangled_name == NULL)
-            {
-                exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
-            }
-
-            t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
-            free(mangled_name);
-
-            if (func_node == NULL)
-            {
-                exit_with_error(ERR_SEM_UNDEF,
-                                "Semantic error: Function '%s' with 0 parameters is not defined at line %d",
-                                func_name, parser.scanner->line);
-            }
+            // Zaznamenáme volanie funkcie pre neskoršiu validáciu
+            record_function_call(func_name, 0, parser.scanner->line);
             return;
         }
         else
@@ -1308,22 +1399,8 @@ void func_call()
             int arg_count = arg_list();
             check_token(RIGHT_PAREN); // ')'
 
-            // Skontrolujeme či funkcia s touto aritou existuje
-            char *mangled_name = mangle_function_name(func_name, arg_count);
-            if (mangled_name == NULL)
-            {
-                exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
-            }
-
-            t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
-            free(mangled_name);
-
-            if (func_node == NULL)
-            {
-                exit_with_error(ERR_SEM_UNDEF,
-                                "Semantic error: Function '%s' with %d parameters is not defined at line %d",
-                                func_name, arg_count, parser.scanner->line);
-            }
+            // Zaznamenáme volanie funkcie pre neskoršiu validáciu
+            record_function_call(func_name, arg_count, parser.scanner->line);
 
             // Vygenerujeme volanie funkcie s počtom argumentov
             generate_function_call(func_name, arg_count);
@@ -1610,5 +1687,11 @@ void parse_program()
         exit_with_error(ERR_SEM_OTHER,
                         "Semantic error: 'main' must be a function, not a getter or setter");
     }
+
+    // Validujeme všetky volania funkcií
+    validate_function_calls();
+    
+    // Uvoľníme zoznam volaní funkcií
+    free_function_calls_list();
 
 }
