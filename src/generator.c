@@ -851,6 +851,10 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
 
     if (operator == OP_ADD)
     {
+        // Check for null operands first
+        printf("JUMPIFEQ $$add_error_null_%d LF@%s string@nil\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$add_error_null_%d LF@%s string@nil\n", tmp_id, right_type);
+        
         // OP_ADD: String + String = concatenation, Num + Num = addition
         printf("JUMPIFEQ $$add_is_string_%d LF@%s string@string\n", tmp_id, left_type);
         
@@ -861,6 +865,12 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         symtable_add_function_var(global_symtable, left_conv);
         symtable_add_function_var(global_symtable, right_conv);
 
+        // Check if left operand is numeric (int or float)
+        printf("JUMPIFEQ $$add_left_is_numeric_%d LF@%s string@float\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$add_left_is_numeric_%d LF@%s string@int\n", tmp_id, left_type);
+        printf("EXIT int@26\n");  // Left operand is not numeric or string
+        printf("LABEL $$add_left_is_numeric_%d\n", tmp_id);
+        
         printf("MOVE LF@%s %s\n", left_conv, left_var);
         printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
         printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
@@ -869,6 +879,12 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
         printf("LABEL $$conv_left_done_%d\n", tmp_id);
 
+        // Check if right operand is numeric (int or float)
+        printf("JUMPIFEQ $$add_right_is_numeric_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$add_right_is_numeric_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("EXIT int@26\n");  // Right operand is not numeric
+        printf("LABEL $$add_right_is_numeric_%d\n", tmp_id);
+        
         printf("MOVE LF@%s %s\n", right_conv, right_var);
         printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
         printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
@@ -883,13 +899,22 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // String concatenation path
         printf("LABEL $$add_is_string_%d\n", tmp_id);
         printf("JUMPIFEQ $$add_concat_%d LF@%s string@string\n", tmp_id, right_type);
-        printf("EXIT int@26\n");  // Type mismatch error
+        printf("EXIT int@26\n");  // Type mismatch error (string + non-string)
         printf("LABEL $$add_concat_%d\n", tmp_id);
         printf("CONCAT %s %s %s\n", result_var, left_var, right_var);
+        printf("JUMP $$add_end_%d\n", tmp_id);
+        
+        // Error label for null operands
+        printf("LABEL $$add_error_null_%d\n", tmp_id);
+        printf("EXIT int@26\n");
         printf("LABEL $$add_end_%d\n", tmp_id);
     }
     else if (operator == OP_MUL)
     {
+        // Check for null operands first
+        printf("JUMPIFEQ $$mul_error_null_%d LF@%s string@nil\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$mul_error_null_%d LF@%s string@nil\n", tmp_id, right_type);
+        
         // OP_MUL: String * Num = repetition, Num * Num = multiplication
         printf("JUMPIFEQ $$mul_is_string_%d LF@%s string@string\n", tmp_id, left_type);
         
@@ -900,6 +925,12 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         symtable_add_function_var(global_symtable, left_conv);
         symtable_add_function_var(global_symtable, right_conv);
 
+        // Check if left operand is numeric (int or float)
+        printf("JUMPIFEQ $$mul_left_is_numeric_%d LF@%s string@float\n", tmp_id, left_type);
+        printf("JUMPIFEQ $$mul_left_is_numeric_%d LF@%s string@int\n", tmp_id, left_type);
+        printf("EXIT int@26\n");  // Left operand is not numeric or string
+        printf("LABEL $$mul_left_is_numeric_%d\n", tmp_id);
+        
         printf("MOVE LF@%s %s\n", left_conv, left_var);
         printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
         printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
@@ -908,6 +939,12 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
         printf("LABEL $$conv_left_done_%d\n", tmp_id);
 
+        // Check if right operand is numeric (int or float)
+        printf("JUMPIFEQ $$mul_right_is_numeric_%d LF@%s string@float\n", tmp_id, right_type);
+        printf("JUMPIFEQ $$mul_right_is_numeric_%d LF@%s string@int\n", tmp_id, right_type);
+        printf("EXIT int@26\n");  // Right operand is not numeric
+        printf("LABEL $$mul_right_is_numeric_%d\n", tmp_id);
+        
         printf("MOVE LF@%s %s\n", right_conv, right_var);
         printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
         printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
@@ -963,7 +1000,11 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         printf("JUMP $$mul_loop_%d\n", tmp_id);
         printf("LABEL $$mul_loop_end_%d\n", tmp_id);
         printf("MOVE %s LF@%s\n", result_var, temp_result);
+        printf("JUMP $$mul_end_%d\n", tmp_id);
         
+        // Error label for null operands
+        printf("LABEL $$mul_error_null_%d\n", tmp_id);
+        printf("EXIT int@26\n");
         printf("LABEL $$mul_end_%d\n", tmp_id);
     }
 }
@@ -1135,22 +1176,30 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
         symtable_add_function_var(global_symtable, left_type);
         symtable_add_function_var(global_symtable, right_type);
 
-        // Convert left operand to float if it's int
+        // Check types and convert left operand to float if it's int
         printf("MOVE LF@%s %s\n", left_conv, left_var);
         printf("TYPE LF@%s LF@%s\n", left_type, left_conv);
+        // Check for null
+        printf("JUMPIFEQ $$arith_error_null_%d LF@%s string@nil\n", type_tmp, left_type);
+        // Check for valid numeric types
         printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", type_tmp, left_type);
         printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", type_tmp, left_type);
-        printf("JUMP $$conv_left_done_%d\n", type_tmp);
+        // If not numeric or null, error
+        printf("EXIT int@26\n");
         printf("LABEL $$conv_left_is_int_%d\n", type_tmp);
         printf("INT2FLOAT LF@%s LF@%s\n", left_conv, left_conv);
         printf("LABEL $$conv_left_done_%d\n", type_tmp);
 
-        // Convert right operand to float if it's int
+        // Check types and convert right operand to float if it's int
         printf("MOVE LF@%s %s\n", right_conv, right_var);
         printf("TYPE LF@%s LF@%s\n", right_type, right_conv);
+        // Check for null
+        printf("JUMPIFEQ $$arith_error_null_%d LF@%s string@nil\n", type_tmp, right_type);
+        // Check for valid numeric types
         printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", type_tmp, right_type);
         printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", type_tmp, right_type);
-        printf("JUMP $$conv_right_done_%d\n", type_tmp);
+        // If not numeric or null, error
+        printf("EXIT int@26\n");
         printf("LABEL $$conv_right_is_int_%d\n", type_tmp);
         printf("INT2FLOAT LF@%s LF@%s\n", right_conv, right_conv);
         printf("LABEL $$conv_right_done_%d\n", type_tmp);
@@ -1182,6 +1231,12 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
             printf("LT %s LF@%s LF@%s\n", result_var, left_conv, right_conv);
             printf("NOT %s %s\n", result_var, result_var);
         }
+
+        printf("JUMP $$arith_end_%d\n", type_tmp);
+        // Error label for null operands
+        printf("LABEL $$arith_error_null_%d\n", type_tmp);
+        printf("EXIT int@26\n");
+        printf("LABEL $$arith_end_%d\n", type_tmp);
 
         break;
     }
@@ -1566,12 +1621,25 @@ void generate_builtin_function_definitions()
     printf("DEFVAR LF@%%param\n");
     printf("DEFVAR LF@%%result\n");
     printf("DEFVAR LF@%%type\n");
+    printf("DEFVAR LF@%%param_int\n");
+    printf("DEFVAR LF@%%isint\n");
     printf("POPS LF@%%param\n");
     printf("TYPE LF@%%type LF@%%param\n");
-    printf("JUMPIFEQ $$chr_ok LF@%%type string@int\n");
-    printf("EXIT int@25\n"); // Type error
+    // Check if parameter is int or convertible float
+    printf("JUMPIFEQ $$chr_param_is_int LF@%%type string@int\n");
+    printf("JUMPIFEQ $$chr_param_is_float LF@%%type string@float\n");
+    printf("EXIT int@25\n"); // Type error - not int or float
+    printf("LABEL $$chr_param_is_float\n");
+    printf("ISINT LF@%%isint LF@%%param\n");
+    printf("JUMPIFEQ $$chr_can_convert LF@%%isint bool@true\n");
+    printf("EXIT int@26\n"); // Operand type error - float is not whole number
+    printf("LABEL $$chr_can_convert\n");
+    printf("FLOAT2INT LF@%%param_int LF@%%param\n");
+    printf("JUMP $$chr_ok\n");
+    printf("LABEL $$chr_param_is_int\n");
+    printf("MOVE LF@%%param_int LF@%%param\n");
     printf("LABEL $$chr_ok\n");
-    printf("INT2CHAR LF@%%result LF@%%param\n");
+    printf("INT2CHAR LF@%%result LF@%%param_int\n");
     printf("PUSHS LF@%%result\n");
     printf("POPFRAME\n");
     printf("RETURN\n");
@@ -1645,7 +1713,7 @@ void generate_builtin_function_definitions()
     printf("LABEL $$ord_param2_is_float\n");
     printf("ISINT LF@%%isint LF@%%param2\n");
     printf("JUMPIFEQ $$ord_can_convert LF@%%isint bool@true\n");
-    printf("EXIT int@25\n"); // Float is not a whole number
+    printf("EXIT int@26\n"); // Operand type error - float is not a whole number
     printf("LABEL $$ord_can_convert\n");
     printf("FLOAT2INT LF@%%param2_int LF@%%param2\n");
     printf("JUMP $$ord_type2_ok\n");
@@ -1686,21 +1754,44 @@ void generate_builtin_function_definitions()
     printf("DEFVAR LF@%%cmp\n");
     printf("DEFVAR LF@%%idx\n");
     printf("DEFVAR LF@%%char\n");
+    printf("DEFVAR LF@%%param2_int\n");
+    printf("DEFVAR LF@%%param3_int\n");
+    printf("DEFVAR LF@%%isint2\n");
+    printf("DEFVAR LF@%%isint3\n");
     printf("POPS LF@%%param3\n"); // Pop in reverse order
     printf("POPS LF@%%param2\n");
     printf("POPS LF@%%param1\n");
     printf("TYPE LF@%%type1 LF@%%param1\n");
     printf("TYPE LF@%%type2 LF@%%param2\n");
     printf("TYPE LF@%%type3 LF@%%param3\n");
+    // Check param1 is string
     printf("JUMPIFEQ $$substring_type1_ok LF@%%type1 string@string\n");
     printf("EXIT int@25\n"); // Type error
     printf("LABEL $$substring_type1_ok\n");
-    printf("JUMPIFEQ $$substring_type2_ok LF@%%type2 string@int\n");
-    printf("EXIT int@25\n"); // Type error
-    printf("LABEL $$substring_type2_ok\n");
-    printf("JUMPIFEQ $$substring_type3_ok LF@%%type3 string@int\n");
-    printf("EXIT int@25\n"); // Type error
-    printf("LABEL $$substring_type3_ok\n");
+    // Check param2 (i) is int or convertible float
+    printf("JUMPIFEQ $$substring_param2_is_int LF@%%type2 string@int\n");
+    printf("JUMPIFEQ $$substring_param2_is_float LF@%%type2 string@float\n");
+    printf("EXIT int@25\n"); // Type error - not int or float
+    printf("LABEL $$substring_param2_is_float\n");
+    printf("ISINT LF@%%isint2 LF@%%param2\n");
+    printf("JUMPIFEQ $$substring_param2_convert LF@%%isint2 bool@true\n");
+    printf("EXIT int@26\n"); // Operand type error - float is not whole number
+    printf("LABEL $$substring_param2_convert\n");
+    printf("FLOAT2INT LF@%%param2_int LF@%%param2\n");
+    printf("MOVE LF@%%param2 LF@%%param2_int\n");
+    printf("LABEL $$substring_param2_is_int\n");
+    // Check param3 (j) is int or convertible float
+    printf("JUMPIFEQ $$substring_param3_is_int LF@%%type3 string@int\n");
+    printf("JUMPIFEQ $$substring_param3_is_float LF@%%type3 string@float\n");
+    printf("EXIT int@25\n"); // Type error - not int or float
+    printf("LABEL $$substring_param3_is_float\n");
+    printf("ISINT LF@%%isint3 LF@%%param3\n");
+    printf("JUMPIFEQ $$substring_param3_convert LF@%%isint3 bool@true\n");
+    printf("EXIT int@26\n"); // Operand type error - float is not whole number
+    printf("LABEL $$substring_param3_convert\n");
+    printf("FLOAT2INT LF@%%param3_int LF@%%param3\n");
+    printf("MOVE LF@%%param3 LF@%%param3_int\n");
+    printf("LABEL $$substring_param3_is_int\n");
     printf("STRLEN LF@%%len LF@%%param1\n");
     // Check if i < 0 or j < 0 or i > j or i >= len
     printf("LT LF@%%cmp LF@%%param2 int@0\n");
