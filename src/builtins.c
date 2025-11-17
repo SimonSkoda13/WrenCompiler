@@ -72,23 +72,23 @@ static void get_param_value(t_ast_node *node, char *result, size_t result_size)
                 int temp_id = get_next_temp_var();
                 char temp_var[64];
                 snprintf(temp_var, sizeof(temp_var), "__getter_result_%d", temp_id);
-                
+
                 // Pridáme dočasnú premennú do zoznamu funkčných premenných
                 symtable_add_function_var(get_global_symtable(), temp_var);
-                
+
                 // Zavoláme getter
                 printf("CALL $%s\n", getter_mangled);
-                
+
                 // Getter vráti hodnotu na zásobník, popneme ju do dočasnej premennej
                 printf("POPS LF@%s\n", temp_var);
-                
+
                 snprintf(result, result_size, "LF@%s", temp_var);
                 free(getter_mangled);
                 break;
             }
             free(getter_mangled);
         }
-        
+
         // Nie je to getter - hľadáme lokálnu premennú
         t_avl_node *var_node = symtable_search_var_scoped(get_global_symtable(), node->token->value.string);
         if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
@@ -107,7 +107,7 @@ static void get_param_value(t_ast_node *node, char *result, size_t result_size)
 
     case GLOBAL_VAR:
         // Global variables start with __ and use GF@ frame
-        snprintf(result, result_size, "GF@%s", node->token->value.string);
+        snprintf(result, result_size, "GF@__%s", node->token->value.string);
         break;
 
     case KEYWORD:
@@ -154,26 +154,27 @@ void generate_builtin_write(t_ast_node *param_node)
     {
         static int write_counter = 0;
         int label_id = write_counter++;
-        
+
         t_symtable *symtable = get_global_symtable();
         char type_var[64], temp_var[64], isint_var[64];
         snprintf(type_var, sizeof(type_var), "__write_type_%d", label_id);
         snprintf(temp_var, sizeof(temp_var), "__write_temp_%d", label_id);
         snprintf(isint_var, sizeof(isint_var), "__write_isint_%d", label_id);
-        
-        if (symtable) {
+
+        if (symtable)
+        {
             symtable_add_function_var(symtable, type_var);
             symtable_add_function_var(symtable, temp_var);
             symtable_add_function_var(symtable, isint_var);
         }
-        
+
         // Check type
         printf("TYPE LF@%s %s\n", type_var, param_var);
         printf("JUMPIFEQ $$write_is_float_%d LF@%s string@float\n", label_id, type_var);
         // Not float, just write it
         printf("WRITE %s\n", param_var);
         printf("JUMP $$write_end_%d\n", label_id);
-        
+
         // It's float - check if it's a whole number using ISINT
         printf("LABEL $$write_is_float_%d\n", label_id);
         printf("ISINT LF@%s %s\n", isint_var, param_var);
@@ -181,12 +182,12 @@ void generate_builtin_write(t_ast_node *param_node)
         // Not a whole number, write as float
         printf("WRITE %s\n", param_var);
         printf("JUMP $$write_end_%d\n", label_id);
-        
+
         // It's a whole number, convert to int and write
         printf("LABEL $$write_convert_to_int_%d\n", label_id);
         printf("FLOAT2INT LF@%s %s\n", temp_var, param_var);
         printf("WRITE LF@%s\n", temp_var);
-        
+
         printf("LABEL $$write_end_%d\n", label_id);
     }
     else

@@ -158,6 +158,26 @@ void start_function_body_buffering();
 void end_function_body_buffering();
 
 /**
+ * @brief Vygeneruje main funkciu z bufferu v správnom poradí
+ */
+void generate_main_function();
+
+/**
+ * @brief Začne bufferovanie user funkcií (všetky funkcie okrem main)
+ */
+void start_user_functions_buffering();
+
+/**
+ * @brief Ukončí bufferovanie user funkcií
+ */
+void end_user_functions_buffering();
+
+/**
+ * @brief Vypíše všetky user funkcie z bufferu
+ */
+void generate_user_functions();
+
+/**
  * @brief Generuje kód pre koniec funkcie (POPFRAME, RETURN)
  * @param func_name Názov funkcie (pre budúce rozšírenia)
  */
@@ -266,7 +286,7 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size);
  * @param result_var Výsledková premenná
  * @param tmp_id Unikátne ID pre labely
  */
-void generate_polymorphic_operation(e_token_type operator, const char *left_var, const char *right_var, const char *result_var, int tmp_id);
+void generate_polymorphic_operation(e_token_type operator, const char * left_var, const char *right_var, const char *result_var, int tmp_id);
 
 /**
  * @brief Rekurzívna funkcia pre generovanie kódu z AST

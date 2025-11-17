@@ -27,14 +27,14 @@ void record_function_call(const char *func_name, int arg_count, int line_number)
     {
         exit_with_error(ERR_INTERNAL, "Internal error: Failed to allocate memory for function call record");
     }
-    
+
     record->func_name = strdup(func_name);
     if (record->func_name == NULL)
     {
         free(record);
         exit_with_error(ERR_INTERNAL, "Internal error: Failed to duplicate function name");
     }
-    
+
     record->arg_count = arg_count;
     record->line_number = line_number;
     record->next = function_calls_list;
@@ -47,7 +47,7 @@ void record_function_call(const char *func_name, int arg_count, int line_number)
 void validate_function_calls()
 {
     t_function_call_record *current = function_calls_list;
-    
+
     while (current != NULL)
     {
         char *mangled_name = mangle_function_name(current->func_name, current->arg_count);
@@ -55,17 +55,17 @@ void validate_function_calls()
         {
             exit_with_error(ERR_INTERNAL, "Internal error: Failed to mangle function name");
         }
-        
+
         t_avl_node *func_node = symtable_search(parser.symtable, mangled_name);
         free(mangled_name);
-        
+
         if (func_node == NULL)
         {
             exit_with_error(ERR_SEM_UNDEF,
                             "Semantic error: Function '%s' with %d parameters is not defined at line %d",
                             current->func_name, current->arg_count, current->line_number);
         }
-        
+
         current = current->next;
     }
 }
@@ -76,7 +76,7 @@ void validate_function_calls()
 void free_function_calls_list()
 {
     t_function_call_record *current = function_calls_list;
-    
+
     while (current != NULL)
     {
         t_function_call_record *next = current->next;
@@ -84,7 +84,7 @@ void free_function_calls_list()
         free(current);
         current = next;
     }
-    
+
     function_calls_list = NULL;
 }
 
@@ -210,7 +210,7 @@ void next_token()
                             "Internal error encountered while getting next token at line %d",
                             parser.scanner->line);
         }
-        
+
         exit_with_error(ERR_LEXICAL,
                         "Lexical error encountered while getting next token at line %d",
                         parser.scanner->line);
@@ -545,20 +545,20 @@ void func()
         {
             exit_with_error(ERR_INTERNAL,
                             "Internal error: Failed to insert parameter '%s' into symbol table at line %d",
-                                params.names[i], parser.scanner->line);
-            }
+                            params.names[i], parser.scanner->line);
         }
+    }
 
-        block();
+    block();
 
-        // Opustíme scope a vyčistíme lokálne premenné
-        symtable_exit_scope(parser.symtable);
+    // Opustíme scope a vyčistíme lokálne premenné
+    symtable_exit_scope(parser.symtable);
 
-        // End buffering and generate all DEFVARs + body
-        end_function_body_buffering();
+    // End buffering and generate all DEFVARs + body
+    end_function_body_buffering();
 
-        generate_function_end(func_name);
-        free(mangled_name);
+    generate_function_end(func_name);
+    free(mangled_name);
 }
 
 void param_list(t_param_list *params)
@@ -812,7 +812,6 @@ void check_num_param(t_ast_node *param, bool check_is_int)
                             parser.scanner->line);
         }
     }
-    
 }
 
 /**
@@ -840,14 +839,14 @@ void assign()
     {
         // Globálna premenná - automaticky ju pridáme do globálnej tabuľky ak neexistuje
         symtable_insert_global_var(parser.global_symtable, identifier, TYPE_UNKNOWN);
-        
+
         char *var_name = identifier;
         consume_token(OP_ASSIGN); // '='
         next_token();
-        
+
         // Spracujeme výraz a vygenerujeme priradenie
         t_ast_node *ast = NULL;
-        
+
         // Kontrola či ide o volanie funkcie alebo výraz
         if (parser.current_token->type == KEYWORD &&
             parser.current_token->value.keyword == KW_IFJ)
@@ -962,7 +961,7 @@ void assign()
                                 "Semantic error: Unknown built-in function '%s' at line %d",
                                 builtin_name, parser.scanner->line);
             }
-            
+
             consume_token(EOL);
         }
         else if (parser.current_token->type == IDENTIFIER)
@@ -1002,10 +1001,10 @@ void assign()
                 // Výraz začínajúci identifikátorom
                 ast = expression(&saved_identifier, parser.current_token);
                 generate_global_assignment(var_name, ast);
-                
+
                 // Mark as initialized
                 symtable_mark_global_initialized(parser.global_symtable, var_name);
-                
+
                 check_token(EOL);
             }
         }
@@ -1014,10 +1013,10 @@ void assign()
             // Výraz
             ast = expression(parser.current_token, NULL);
             generate_global_assignment(var_name, ast);
-            
+
             // Mark as initialized
             symtable_mark_global_initialized(parser.global_symtable, var_name);
-            
+
             check_token(EOL);
         }
         return;
@@ -1298,7 +1297,7 @@ void if_statement()
     generate_if_start(condition_ast, label_id);
 
     putback_token(); // Putback { after expression
-    block(); // Parser vygeneruje kód then bloku
+    block();         // Parser vygeneruje kód then bloku
 
     // Prechod na else
     consume_token(KEYWORD); // 'else'
@@ -1366,7 +1365,7 @@ void return_statement()
         t_ast_node *ast = expression(parser.current_token, NULL);
         generate_return_statement(ast);
     }
-    
+
     check_token(EOL);
 }
 
@@ -1741,32 +1740,41 @@ void eols()
 void parse_program()
 {
     prolog();
-    generate_header();  // .IFJcode25 + JUMP $$main
-    generate_builtin_function_definitions();  // Builtin funkcie
-    program();          // Parsuje a generuje user funkcie (okrem main ktorý sa bufferuje)
+
+    // Len vypísať hlavičku
+    printf(".IFJcode25\n");
+
+    // Začneme bufferovať všetky user funkcie (aby sme ich vypísali až po JUMP $$main)
+    start_user_functions_buffering();
+
+    program(); // Parsuje funkcie (main a non-main sa bufferujú)
     next_token();
     eols();
     consume_token(END_OF_FILE);
 
-    // Skontrolujeme, či existuje funkcia main
+    // Validácia
     t_avl_node *main_func = symtable_search(parser.symtable, "main");
     if (main_func == NULL)
     {
-        exit_with_error(ERR_SEM_UNDEF,
-                        "Semantic error: Function 'main' is not defined");
+        exit_with_error(ERR_SEM_UNDEF, "Semantic error: Function 'main' is not defined");
     }
-
-    // Skontrolujeme, či main je funkcia (nie getter/setter)
     if (main_func->ifj_sym_type != SYM_FUNCTION)
     {
-        exit_with_error(ERR_SEM_OTHER,
-                        "Semantic error: 'main' must be a function, not a getter or setter");
+        exit_with_error(ERR_SEM_OTHER, "Semantic error: 'main' must be a function");
     }
 
-    // Validujeme všetky volania funkcií
+    // Validujeme volania
     validate_function_calls();
-    
-    // Uvoľníme zoznam volaní funkcií
-    free_function_calls_list();
 
+    // Ukončíme bufferovanie user funkcií
+    end_user_functions_buffering();
+
+    // TERAZ vypíšeme v SPRÁVNOM poradí:
+    generate_global_variables_declarations(); // 1. DEFVAR GF@__xxx
+    printf("JUMP $$main\n");                  // 2. JUMP $$main
+    generate_builtin_function_definitions();  // 3. Builtin funkcie
+    generate_user_functions();                // 4. User funkcie (z bufferu)
+    generate_main_function();                 // 5. Main funkcia (z bufferu)
+
+    free_function_calls_list();
 }

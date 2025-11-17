@@ -22,11 +22,23 @@ static t_symtable *global_vars_symtable = NULL;
 // Počítadlo pre unikátne labely pre if/while konštrukcie
 static int ifj_label_counter = 0;
 
+// Real stdout - saved once, never overwritten
+static FILE *real_stdout = NULL;
+
 // Buffer for function body code generation
 static char *function_body_buffer = NULL;
 static size_t function_body_buffer_size = 0;
 static FILE *function_body_stream = NULL;
 static FILE *original_stdout = NULL;
+
+// Buffer for main function (to output it at the end in correct order)
+static char *main_function_buffer = NULL;
+static size_t main_function_buffer_size = 0;
+
+// Buffer for all user functions (non-main) - to output after JUMP $$main
+static char *user_functions_buffer = NULL;
+static size_t user_functions_buffer_size = 0;
+static FILE *user_functions_stream = NULL;
 
 // Buffer for helper variables (if_cond, while_cond, etc.)
 #define MAX_HELPER_VARS 100
@@ -35,6 +47,14 @@ static int helper_vars_count = 0;
 
 // Aktuálna funkcia (pre sledovanie, či sme v main)
 static const char *current_function_name = NULL;
+
+// Flag pre sledovanie, či funkcia už mala explicitný return
+static bool function_has_explicit_return = false;
+
+// Saved function vars for main function (to preserve across other function parsing)
+#define MAX_MAIN_FUNCTION_VARS 1000
+static char *main_function_vars[MAX_MAIN_FUNCTION_VARS];
+static int main_function_vars_count = 0;
 
 void generator_set_symtable(t_symtable *ifj_symtable)
 {
@@ -60,7 +80,7 @@ void generate_global_defvar_once(const char *var_name)
 
     // Skontrolujeme či DEFVAR už bol vygenerovaný (nie či premenná existuje v symtable)
     t_avl_node *node = symtable_search(global_vars_symtable, var_name);
-    
+
     // Generujeme DEFVAR len ak:
     // 1. Premenná ešte neexistuje v symtable (node == NULL), alebo
     // 2. Premenná existuje, ale DEFVAR ešte nebol vygenerovaný
@@ -69,7 +89,7 @@ void generate_global_defvar_once(const char *var_name)
         // Deklarujeme s hodnotou null
         printf("DEFVAR GF@__%s\n", var_name);
         printf("MOVE GF@__%s nil@nil\n", var_name);
-        
+
         // Označíme že DEFVAR bol vygenerovaný
         if (node == NULL)
         {
@@ -77,7 +97,7 @@ void generate_global_defvar_once(const char *var_name)
             symtable_insert_global_var(global_vars_symtable, var_name, TYPE_UNKNOWN);
             node = symtable_search(global_vars_symtable, var_name);
         }
-        
+
         if (node != NULL)
         {
             node->ifj_data.ifj_var.ifj_defvar_generated = true;
@@ -96,7 +116,7 @@ void register_helper_var(const char *var_name)
     {
         exit_with_error(ERR_INTERNAL, "Too many helper variables");
     }
-    
+
     // Check if already registered
     for (int i = 0; i < helper_vars_count; i++)
     {
@@ -105,7 +125,7 @@ void register_helper_var(const char *var_name)
             return; // Already registered
         }
     }
-    
+
     helper_vars[helper_vars_count] = strdup(var_name);
     helper_vars_count++;
 }
@@ -135,16 +155,16 @@ void traverse_and_generate(t_avl_node *node)
     {
         return;
     }
-    
+
     traverse_and_generate(node->ifj_left);
-    
+
     // Ak je to globálna premenná, vygenerujeme DEFVAR
     if (node->ifj_sym_type == SYM_VAR_GLOBAL)
     {
         printf("DEFVAR GF@__%s\n", node->ifj_key);
         printf("MOVE GF@__%s nil@nil\n", node->ifj_key);
     }
-    
+
     traverse_and_generate(node->ifj_right);
 }
 
@@ -154,13 +174,62 @@ void generate_global_variables_declarations()
     {
         return;
     }
-    
+
     if (global_vars_symtable->ifj_root == NULL)
     {
         return;
     }
-    
+
     traverse_and_generate(global_vars_symtable->ifj_root);
+}
+
+void start_user_functions_buffering()
+{
+    // Save the REAL stdout (only once, the first time)
+    if (real_stdout == NULL)
+    {
+        real_stdout = stdout;
+    }
+
+    // Open memory stream for buffering user functions
+    user_functions_stream = open_memstream(&user_functions_buffer, &user_functions_buffer_size);
+    if (user_functions_stream == NULL)
+    {
+        exit_with_error(ERR_INTERNAL, "Failed to create memory stream for user functions");
+    }
+
+    // Redirect stdout to user functions buffer
+    stdout = user_functions_stream;
+}
+
+void end_user_functions_buffering()
+{
+    if (user_functions_stream == NULL)
+    {
+        return;
+    }
+
+    // Flush and close the memory stream
+    fflush(user_functions_stream);
+    fclose(user_functions_stream);
+    user_functions_stream = NULL;
+
+    // Restore the REAL stdout (not original_stdout which might be a buffer)
+    stdout = real_stdout;
+}
+
+void generate_user_functions()
+{
+    if (user_functions_buffer == NULL || user_functions_buffer_size == 0)
+    {
+        return;
+    }
+
+    // Output all buffered user functions
+    fwrite(user_functions_buffer, 1, user_functions_buffer_size, stdout);
+    free(user_functions_buffer);
+    user_functions_buffer = NULL;
+    user_functions_buffer_size = 0;
 }
 
 void start_function_body_buffering()
@@ -194,18 +263,34 @@ void end_function_body_buffering()
     // Restore original stdout
     stdout = original_stdout;
 
-    // Now generate all DEFVARs first
-    generate_all_function_defvars();
-    
-    // Generate helper variables (if_cond, etc.)
-    generate_helper_defvars();
-    
-    // Pre main funkciu vygenerujeme deklarácie globálnych premenných
-    // pred výpisom tela funkcie (po LABEL $$main, pred CREATEFRAME)
+    // AK JE TO MAIN, uložíme buffer NABOK a nevypisujeme teraz
     if (current_function_name != NULL && strcmp(current_function_name, "main") == 0)
     {
-        generate_global_variables_declarations();
+        // Uložíme main buffer pre neskoršie použitie
+        main_function_buffer = function_body_buffer;
+        main_function_buffer_size = function_body_buffer_size;
+        function_body_buffer = NULL;
+        function_body_buffer_size = 0;
+
+        // Uložíme main premenné z global_symtable
+        main_function_vars_count = 0;
+        for (int i = 0; i < global_symtable->ifj_function_vars_count; i++)
+        {
+            if (global_symtable->ifj_function_vars[i] != NULL && main_function_vars_count < MAX_MAIN_FUNCTION_VARS)
+            {
+                main_function_vars[main_function_vars_count++] = strdup(global_symtable->ifj_function_vars[i]);
+            }
+        }
+
+        return; // NEVYPISUJEME main teraz!
     }
+
+    // Pre non-main funkcie vypíšeme normálne
+    // Now generate all DEFVARs first
+    generate_all_function_defvars();
+
+    // Generate helper variables (if_cond, etc.)
+    generate_helper_defvars();
 
     // Then output the buffered function body
     if (function_body_buffer != NULL && function_body_buffer_size > 0)
@@ -444,22 +529,21 @@ void generate_function_start(const char *func_name, const char *mangled_name, t_
 {
     // Nastavíme aktuálnu funkciu
     current_function_name = func_name;
-    
+
+    // Resetujeme flag pre explicitný return
+    function_has_explicit_return = false;
+
     // Vygenerujeme label pre funkciu
-    if (strcmp(func_name, "main") == 0)
-    {
-        printf("LABEL $$main\n");
-        // Pre main funkciu NEBUDE generovať deklarácie tu, ale až na konci po naparsovaní
-        // Ponecháme prázdny marker, kam sa vrátia deklarácie
-    }
-    else
+    // Pre main NEVYPISUJEME LABEL teraz (vypíše sa neskôr v správnom poradí)
+    if (strcmp(func_name, "main") != 0)
     {
         printf("LABEL $%s\n", mangled_name);
-    }
 
-    // Vytvoríme a aktivujeme lokálny rámec
-    printf("CREATEFRAME\n");
-    printf("PUSHFRAME\n");
+        // Pre non-main funkcie vytvoríme a aktivujeme lokálny rámec
+        printf("CREATEFRAME\n");
+        printf("PUSHFRAME\n");
+    }
+    // Pre main funkciu CREATEFRAME a PUSHFRAME vypíše generate_main_function()
 
     // Najprv definujeme všetky premenné pre parametre
     for (int i = 0; i < params->count; i++)
@@ -496,20 +580,71 @@ void generate_function_end(const char *func_name)
 {
     if (strcmp(func_name, "main") == 0)
     {
-        // Main funkcia končí POPFRAME a EXIT
-        printf("POPFRAME\n");
-        printf("EXIT int@0\n");
+        // Main funkcia sa ukončí neskôr v generate_main_function()
+        // Tu iba ukončíme buffering (už sa stalo v end_function_body_buffering)
+        return;
     }
     else
     {
-        // Bežná funkcia - implicitný return nil
-        printf("PUSHS nil@nil\n");
-        printf("POPFRAME\n");
-        printf("RETURN\n");
+        // Bežná funkcia - implicitný return nil LEN ak nemala explicitný return
+        if (!function_has_explicit_return)
+        {
+            printf("PUSHS nil@nil\n");
+            printf("POPFRAME\n");
+            printf("RETURN\n");
+        }
     }
-    
+
     // Clear helper variables for next function
     clear_helper_vars();
+}
+
+void generate_main_function()
+{
+    if (main_function_buffer == NULL)
+    {
+        return; // Main nebola definovaná alebo už bola vypísaná
+    }
+
+    // Vygenerujeme LABEL a začiatok main funkcie
+    printf("LABEL $$main\n");
+    printf("CREATEFRAME\n");
+    printf("PUSHFRAME\n");
+
+    // Generate DEFVARs for main's variables (uložené v main_function_vars)
+    for (int i = 0; i < main_function_vars_count; i++)
+    {
+        if (main_function_vars[i] != NULL)
+        {
+            printf("DEFVAR LF@%s\n", main_function_vars[i]);
+        }
+    }
+
+    generate_helper_defvars();
+
+    // Output main body z bufferu
+    fwrite(main_function_buffer, 1, main_function_buffer_size, stdout);
+    free(main_function_buffer);
+    main_function_buffer = NULL;
+    main_function_buffer_size = 0;
+
+    // Ukončíme main
+    printf("POPFRAME\n");
+    printf("EXIT int@0\n");
+
+    // Clear helper variables
+    clear_helper_vars();
+
+    // Clear saved main variables
+    for (int i = 0; i < main_function_vars_count; i++)
+    {
+        if (main_function_vars[i] != NULL)
+        {
+            free(main_function_vars[i]);
+            main_function_vars[i] = NULL;
+        }
+    }
+    main_function_vars_count = 0;
 }
 
 void generate_return_value(t_ast_node *ast)
@@ -541,16 +676,19 @@ void generate_return_value(t_ast_node *ast)
 
 void generate_return_statement(t_ast_node *ast)
 {
+    // Označíme, že funkcia má explicitný return
+    function_has_explicit_return = true;
+
     // V main funkcii používame EXIT namiesto RETURN
     if (current_function_name != NULL && strcmp(current_function_name, "main") == 0)
     {
         printf("EXIT int@0\n");
         return;
     }
-    
+
     // Pushni návratovú hodnotu na zásobník
     generate_return_value(ast);
-    
+
     // Ukončenie funkcie
     printf("POPFRAME\n");
     printf("RETURN\n");
@@ -779,23 +917,23 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
                 int temp_id = get_next_temp_var();
                 char temp_var[64];
                 snprintf(temp_var, sizeof(temp_var), "__getter_result_%d", temp_id);
-                
+
                 // Pridáme dočasnú premennú do zoznamu funkčných premenných
                 symtable_add_function_var(global_symtable, temp_var);
-                
+
                 // Zavoláme getter
                 printf("CALL $%s\n", getter_mangled);
-                
+
                 // Getter vráti hodnotu na zásobník, popneme ju do dočasnej premennej
                 printf("POPS LF@%s\n", temp_var);
-                
+
                 snprintf(result, result_size, "LF@%s", temp_var);
                 free(getter_mangled);
                 break;
             }
             free(getter_mangled);
         }
-        
+
         // Nie je to getter - hľadáme lokálnu premennú
         t_avl_node *var_node = symtable_search_var_scoped(global_symtable, node->token->value.string);
         if (var_node != NULL && var_node->ifj_sym_type == SYM_VAR_LOCAL)
@@ -854,10 +992,10 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // Check for null operands first
         printf("JUMPIFEQ $$add_error_null_%d LF@%s string@nil\n", tmp_id, left_type);
         printf("JUMPIFEQ $$add_error_null_%d LF@%s string@nil\n", tmp_id, right_type);
-        
+
         // OP_ADD: String + String = concatenation, Num + Num = addition
         printf("JUMPIFEQ $$add_is_string_%d LF@%s string@string\n", tmp_id, left_type);
-        
+
         // Numeric addition path with INT2FLOAT conversion
         char left_conv[64], right_conv[64];
         snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", tmp_id);
@@ -868,9 +1006,9 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // Check if left operand is numeric (int or float)
         printf("JUMPIFEQ $$add_left_is_numeric_%d LF@%s string@float\n", tmp_id, left_type);
         printf("JUMPIFEQ $$add_left_is_numeric_%d LF@%s string@int\n", tmp_id, left_type);
-        printf("EXIT int@26\n");  // Left operand is not numeric or string
+        printf("EXIT int@26\n"); // Left operand is not numeric or string
         printf("LABEL $$add_left_is_numeric_%d\n", tmp_id);
-        
+
         printf("MOVE LF@%s %s\n", left_conv, left_var);
         printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
         printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
@@ -882,9 +1020,9 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // Check if right operand is numeric (int or float)
         printf("JUMPIFEQ $$add_right_is_numeric_%d LF@%s string@float\n", tmp_id, right_type);
         printf("JUMPIFEQ $$add_right_is_numeric_%d LF@%s string@int\n", tmp_id, right_type);
-        printf("EXIT int@26\n");  // Right operand is not numeric
+        printf("EXIT int@26\n"); // Right operand is not numeric
         printf("LABEL $$add_right_is_numeric_%d\n", tmp_id);
-        
+
         printf("MOVE LF@%s %s\n", right_conv, right_var);
         printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
         printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
@@ -899,11 +1037,11 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // String concatenation path
         printf("LABEL $$add_is_string_%d\n", tmp_id);
         printf("JUMPIFEQ $$add_concat_%d LF@%s string@string\n", tmp_id, right_type);
-        printf("EXIT int@26\n");  // Type mismatch error (string + non-string)
+        printf("EXIT int@26\n"); // Type mismatch error (string + non-string)
         printf("LABEL $$add_concat_%d\n", tmp_id);
         printf("CONCAT %s %s %s\n", result_var, left_var, right_var);
         printf("JUMP $$add_end_%d\n", tmp_id);
-        
+
         // Error label for null operands
         printf("LABEL $$add_error_null_%d\n", tmp_id);
         printf("EXIT int@26\n");
@@ -914,10 +1052,10 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // Check for null operands first
         printf("JUMPIFEQ $$mul_error_null_%d LF@%s string@nil\n", tmp_id, left_type);
         printf("JUMPIFEQ $$mul_error_null_%d LF@%s string@nil\n", tmp_id, right_type);
-        
+
         // OP_MUL: String * Num = repetition, Num * Num = multiplication
         printf("JUMPIFEQ $$mul_is_string_%d LF@%s string@string\n", tmp_id, left_type);
-        
+
         // Numeric multiplication path with INT2FLOAT conversion
         char left_conv[64], right_conv[64];
         snprintf(left_conv, sizeof(left_conv), "__conv_left_%d", tmp_id);
@@ -928,9 +1066,9 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // Check if left operand is numeric (int or float)
         printf("JUMPIFEQ $$mul_left_is_numeric_%d LF@%s string@float\n", tmp_id, left_type);
         printf("JUMPIFEQ $$mul_left_is_numeric_%d LF@%s string@int\n", tmp_id, left_type);
-        printf("EXIT int@26\n");  // Left operand is not numeric or string
+        printf("EXIT int@26\n"); // Left operand is not numeric or string
         printf("LABEL $$mul_left_is_numeric_%d\n", tmp_id);
-        
+
         printf("MOVE LF@%s %s\n", left_conv, left_var);
         printf("JUMPIFEQ $$conv_left_done_%d LF@%s string@float\n", tmp_id, left_type);
         printf("JUMPIFEQ $$conv_left_is_int_%d LF@%s string@int\n", tmp_id, left_type);
@@ -942,9 +1080,9 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         // Check if right operand is numeric (int or float)
         printf("JUMPIFEQ $$mul_right_is_numeric_%d LF@%s string@float\n", tmp_id, right_type);
         printf("JUMPIFEQ $$mul_right_is_numeric_%d LF@%s string@int\n", tmp_id, right_type);
-        printf("EXIT int@26\n");  // Right operand is not numeric
+        printf("EXIT int@26\n"); // Right operand is not numeric
         printf("LABEL $$mul_right_is_numeric_%d\n", tmp_id);
-        
+
         printf("MOVE LF@%s %s\n", right_conv, right_var);
         printf("JUMPIFEQ $$conv_right_done_%d LF@%s string@float\n", tmp_id, right_type);
         printf("JUMPIFEQ $$conv_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
@@ -958,12 +1096,12 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
 
         // String repetition path: String * Num
         printf("LABEL $$mul_is_string_%d\n", tmp_id);
-        
+
         // Right operand must be Num (int or float)
         printf("JUMPIFEQ $$mul_right_is_int_%d LF@%s string@int\n", tmp_id, right_type);
         printf("JUMPIFEQ $$mul_right_is_float_%d LF@%s string@float\n", tmp_id, right_type);
-        printf("EXIT int@26\n");  // Type mismatch error
-        
+        printf("EXIT int@26\n"); // Type mismatch error
+
         // Convert float to int and check if it's whole number
         printf("LABEL $$mul_right_is_float_%d\n", tmp_id);
         char is_whole[64], count_int[64];
@@ -971,17 +1109,17 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         snprintf(count_int, sizeof(count_int), "__mul_count_int_%d", tmp_id);
         symtable_add_function_var(global_symtable, is_whole);
         symtable_add_function_var(global_symtable, count_int);
-        
+
         printf("ISINT LF@%s %s\n", is_whole, right_var);
         printf("JUMPIFEQ $$mul_can_convert_%d LF@%s bool@true\n", tmp_id, is_whole);
-        printf("EXIT int@26\n");  // Float is not a whole number
+        printf("EXIT int@26\n"); // Float is not a whole number
         printf("LABEL $$mul_can_convert_%d\n", tmp_id);
         printf("FLOAT2INT LF@%s %s\n", count_int, right_var);
         printf("JUMP $$mul_repeat_%d\n", tmp_id);
-        
+
         printf("LABEL $$mul_right_is_int_%d\n", tmp_id);
         printf("MOVE LF@%s %s\n", count_int, right_var);
-        
+
         // String repetition loop
         printf("LABEL $$mul_repeat_%d\n", tmp_id);
         char counter[64], temp_result[64];
@@ -989,8 +1127,8 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         snprintf(temp_result, sizeof(temp_result), "__mul_result_%d", tmp_id);
         symtable_add_function_var(global_symtable, counter);
         symtable_add_function_var(global_symtable, temp_result);
-        
-        printf("MOVE LF@%s string@\n", temp_result);  // Empty string
+
+        printf("MOVE LF@%s string@\n", temp_result); // Empty string
         printf("MOVE LF@%s int@0\n", counter);
         printf("LABEL $$mul_loop_%d\n", tmp_id);
         printf("LT LF@%s LF@%s LF@%s\n", is_whole, counter, count_int);
@@ -1001,7 +1139,7 @@ void generate_polymorphic_operation(e_token_type operator, const char *left_var,
         printf("LABEL $$mul_loop_end_%d\n", tmp_id);
         printf("MOVE %s LF@%s\n", result_var, temp_result);
         printf("JUMP $$mul_end_%d\n", tmp_id);
-        
+
         // Error label for null operands
         printf("LABEL $$mul_error_null_%d\n", tmp_id);
         printf("EXIT int@26\n");
@@ -1050,7 +1188,8 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     if (node->left != NULL)
     {
         int err = generate_expression_code(node->left, left_var, sizeof(left_var));
-        if (err) return err;
+        if (err)
+            return err;
 
         // Ak ľavý operand nie je jednoduchá hodnota, musíme ho uložiť do temp premennej
         if (node->left->left != NULL || node->left->right != NULL)
@@ -1071,7 +1210,8 @@ int generate_expression_code(t_ast_node *node, char *result_var, size_t result_v
     if (node->right != NULL && node->token->type != OP_IS)
     {
         int err = generate_expression_code(node->right, right_var, sizeof(right_var));
-        if (err) return err;
+        if (err)
+            return err;
 
         // Ak pravý operand nie je jednoduchá hodnota, musíme ho uložiť do temp premennej
         if (node->right->left != NULL || node->right->right != NULL)
@@ -1417,16 +1557,16 @@ void generate_if_start(t_ast_node *condition_ast, int label_id)
     char cond_var_name[64];
     snprintf(cond_var_name, sizeof(cond_var_name), "__if_cond_%d", label_id);
     symtable_add_function_var(global_symtable, cond_var_name);
-    
+
     // Uložíme výsledok podmienky do lokálnej premennej
     printf("MOVE LF@%s %s\n", cond_var_name, result_var);
 
     // Rozlíšime dva prípady:
     // 1. Jednoduchá premenná/literál (if (__a)): iba nil je falsy
     // 2. Výraz s operátormi (if (a > b)): nil a false sú falsy
-    
+
     bool is_simple_value = (condition_ast->left == NULL && condition_ast->right == NULL);
-    
+
     if (is_simple_value)
     {
         // Pre jednoduchú premennú: iba nil je falsy
@@ -1438,7 +1578,7 @@ void generate_if_start(t_ast_node *condition_ast, int label_id)
         printf("JUMPIFEQ $$if_else_%d LF@%s nil@nil\n", label_id, cond_var_name);
         printf("JUMPIFEQ $$if_else_%d LF@%s bool@false\n", label_id, cond_var_name);
     }
-    
+
     // Ak podmienka je true, pokračujeme do then bloku (kód nasleduje)
 }
 
@@ -1698,17 +1838,17 @@ void generate_builtin_function_definitions()
     printf("POPS LF@%%param1\n");
     printf("TYPE LF@%%type1 LF@%%param1\n");
     printf("TYPE LF@%%type2 LF@%%param2\n");
-    
+
     // Check first parameter is string
     printf("JUMPIFEQ $$ord_type1_ok LF@%%type1 string@string\n");
     printf("EXIT int@25\n"); // Type error
     printf("LABEL $$ord_type1_ok\n");
-    
+
     // Check second parameter is int or float
     printf("JUMPIFEQ $$ord_param2_is_int LF@%%type2 string@int\n");
     printf("JUMPIFEQ $$ord_param2_is_float LF@%%type2 string@float\n");
     printf("EXIT int@25\n"); // Type error - not int or float
-    
+
     // Convert float to int if it's a whole number
     printf("LABEL $$ord_param2_is_float\n");
     printf("ISINT LF@%%isint LF@%%param2\n");
@@ -1717,11 +1857,11 @@ void generate_builtin_function_definitions()
     printf("LABEL $$ord_can_convert\n");
     printf("FLOAT2INT LF@%%param2_int LF@%%param2\n");
     printf("JUMP $$ord_type2_ok\n");
-    
+
     // Parameter is already int
     printf("LABEL $$ord_param2_is_int\n");
     printf("MOVE LF@%%param2_int LF@%%param2\n");
-    
+
     printf("LABEL $$ord_type2_ok\n");
     printf("STRLEN LF@%%len LF@%%param1\n");
     printf("LT LF@%%cmp LF@%%param2_int int@0\n");
