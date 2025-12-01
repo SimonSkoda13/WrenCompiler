@@ -159,15 +159,11 @@ int arg_list_tail();
  * @return Ukazovateľ na AST koreň výrazu
  */
 t_ast_node *expression(t_token *token1, t_token *token2);
-void expression_continue();
+
 /**
- * Spracuje terminál vo výraze.
+ * Skontroluje či je aktuálny token operátor.
+ * @return true ak je operátor, inak false
  */
-void term();
-/**
- * Spracuje operátor vo výraze.
- */
-void op();
 bool is_operator();
 /**
  * Spracuje viacnásobné EOL tokeny.

@@ -1,10 +1,10 @@
-/**
- * @file main.c
- * @brief Main entry point for IFJ25 compiler
+/*
+ * Prekladač jazyka IFJ25
+ * VUT FIT
  *
- * Project: IFJ Compiler
- * Team: [Your Team Name]
- * Members: [Your Names]
+ * Autori:
+ *   - Martin Michálik (xmicham00)
+ *   - Šimon Škoda (xskodas00)
  */
 
 #include <stdio.h>
@@ -16,6 +16,7 @@ int main(int argc, char *argv[])
     t_scanner scanner;
     FILE *f = NULL;
 
+    // Toto slúži na debugovanie s inputom zo súboru
     if (argc >= 2) {
         f = fopen(argv[1], "r");
         if (!f) {
@@ -27,13 +28,12 @@ int main(int argc, char *argv[])
         scanner.stream = stdin;
     }
 
-    /* initialize scanner state members used by scanner.c */
-    /* these fields are present in your scanner implementation */
+    // Init scanner
     scanner.line = 1;
     scanner.putback = 0;
     t_token current_token, putback_token;
     
-    /* initialize symbol tables */
+    // Initi symbol tables
     t_symtable symtable;
     t_symtable global_symtable;
     symtable_init(&symtable);
@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
     
     parse_program();
     
-    /* cleanup symbol tables */
+    // Cleanup symbol tables
     symtable_destroy(&symtable);
     symtable_destroy(&global_symtable);
     

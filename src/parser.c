@@ -88,109 +88,6 @@ void free_function_calls_list()
     function_calls_list = NULL;
 }
 
-// DEBUG
-void ast_print_tree(t_ast_node *node, int depth)
-{
-    if (node == NULL)
-    {
-        return;
-    }
-    // Print indentation
-    for (int i = 0; i < depth; i++)
-    {
-        printf("  ");
-    }
-
-    // Print node information
-    switch (node->token->type)
-    {
-    case OP_ADD:
-        printf("OP_ADD (+)\n");
-        break;
-    case OP_SUB:
-        printf("OP_SUB (-)\n");
-        break;
-    case OP_MUL:
-        printf("OP_MUL (*)\n");
-        break;
-    case OP_DIV:
-        printf("OP_DIV (/)\n");
-        break;
-    case OP_LESS_THAN:
-        printf("OP_LESS_THAN (<)\n");
-        break;
-    case OP_LESS_EQUAL:
-        printf("OP_LESS_EQUAL (<=)\n");
-        break;
-    case OP_GREATER_THAN:
-        printf("OP_GREATER_THAN (>)\n");
-        break;
-    case OP_GREATER_THAN_EQUAL:
-        printf("OP_GREATER_THAN_EQUAL (>=)\n");
-        break;
-    case OP_EQUALS:
-        printf("OP_EQUALS (==)\n");
-        break;
-    case OP_NOT_EQUALS:
-        printf("OP_NOT_EQUALS (!=)\n");
-        break;
-    case OP_IS:
-        printf("OP_IS (is)\n");
-        break;
-    case NUM_INT:
-        printf("NUM_INT (%ld)\n", node->token->value.number_int);
-        break;
-    case NUM_FLOAT:
-        printf("NUM_FLOAT (%g)\n", node->token->value.number_float);
-        break;
-    case NUM_EXP_INT:
-        printf("NUM_EXP_INT (%ld)\n", node->token->value.number_int);
-        break;
-    case NUM_EXP_FLOAT:
-        printf("NUM_EXP_FLOAT (%g)\n", node->token->value.number_float);
-        break;
-    case STRING_LITERAL:
-        printf("STRING_LITERAL (\"%s\")\n", node->token->value.string);
-        break;
-    case IDENTIFIER:
-        printf("IDENTIFIER (%s)\n", node->token->value.string);
-        break;
-    case GLOBAL_VAR:
-        printf("GLOBAL_VAR (%s)\n", node->token->value.string);
-        break;
-    case KEYWORD:
-        if (node->token->value.keyword == KW_NULL_TYPE ||
-            node->token->value.keyword == KW_NULL_INST)
-        {
-            printf("KEYWORD (%s)\n", "null");
-        }
-        else if (node->token->value.keyword == KW_NUM)
-        {
-            printf("KEYWORD (%s)\n", "Num");
-        }
-        else if (node->token->value.keyword == KW_STRING)
-        {
-            printf("KEYWORD (%s)\n", "String");
-        }
-        else
-            printf("KEYWORD (%s)\n", "unknown");
-        break;
-    default:
-        printf("UNKNOWN_TYPE (%d)\n", node->token->type);
-        break;
-    }
-
-    // Recursively print left and right children
-    if (node->left != NULL)
-    {
-        ast_print_tree(node->left, depth + 1);
-    }
-    if (node->right != NULL)
-    {
-        ast_print_tree(node->right, depth + 1);
-    }
-}
-
 void next_token()
 {
     // Check if we have a putback token first
@@ -226,7 +123,6 @@ void putback_token()
                         parser.scanner->line);
     }
 
-    // Copy current token to putback storage
     *parser.putback_token = *parser.current_token;
     parser.has_putback = true;
 }
@@ -256,7 +152,6 @@ bool check_token_type(e_token_type expected_type)
 
 void prolog()
 {
-    // Consume any leading whitespace or EOLs
     next_token();
     if (parser.current_token->type == EOL)
     {
@@ -309,13 +204,13 @@ void func_list()
     next_token();
     if (parser.current_token->type == EOL)
     {
-        eols(); // consume any EOLs between functions
+        eols();
     }
 
-    // Base case: end of class
+    
     if (parser.current_token->type == RIGHT_BRACE)
     {
-        return; // ✓ Stop recursion
+        return;
     }
 
     if (parser.current_token->type != KEYWORD)
@@ -379,7 +274,7 @@ void func()
         t_param_list empty_params = {.count = 0};
         generate_function_start(func_name, mangled_name, &empty_params); // true = getter
 
-        // Start collecting function variables and buffering body
+        // Začneme zbierať premenné funkcie a bufferovať telo
         symtable_start_function(parser.symtable);
         start_function_body_buffering();
 
@@ -395,7 +290,7 @@ void func()
         // Opustíme scope
         symtable_exit_scope(parser.symtable);
 
-        // End buffering and generate all DEFVARs + body
+        // Ukončíme bufferovanie a vygenerujeme všetky DEFVAR + telo
         end_function_body_buffering();
 
         generate_function_end(func_name);
@@ -403,7 +298,7 @@ void func()
         return;
     }
     else if (parser.current_token->type == OP_ASSIGN)
-    { // static setter
+    {
         // Setter - 1 parameter, TYPE_UNKNOWN typ
         // Vytvoríme manglované meno pre setter
         char *mangled_name = mangle_setter_name(func_name);
@@ -441,7 +336,7 @@ void func()
         generate_function_start(func_name, mangled_name, &setter_params); // false = nie getter
         free(mangled_name);
 
-        // Start collecting function variables and buffering body
+        // Začneme zbierať premenné funkcie a bufferovať telo
         symtable_start_function(parser.symtable);
         start_function_body_buffering();
 
@@ -466,7 +361,7 @@ void func()
         // Opustíme scope
         symtable_exit_scope(parser.symtable);
 
-        // End buffering and generate all DEFVARs + body
+        // Ukončíme bufferovanie a vygenerujeme všetky DEFVAR + telo
         end_function_body_buffering();
 
         generate_function_end(func_name);
@@ -498,7 +393,6 @@ void func()
     }
 
     // Vložíme funkciu do symbol table s počtom parametrov
-    // TODO: Momentálne používame TYPE_UNKNOWN pre typy parametrov
     e_data_type *param_types = NULL;
     if (params.count > 0)
     {
@@ -526,7 +420,7 @@ void func()
     // Vygenerujeme začiatok funkcie (LABEL, CREATEFRAME, PUSHFRAME)
     generate_function_start(func_name, mangled_name, &params);
 
-    // Start collecting function variables and buffering body
+    // Začneme zbierať premenné funkcie a bufferovať telo
     symtable_start_function(parser.symtable);
     start_function_body_buffering();
 
@@ -554,7 +448,7 @@ void func()
     // Opustíme scope a vyčistíme lokálne premenné
     symtable_exit_scope(parser.symtable);
 
-    // End buffering and generate all DEFVARs + body
+    // Ukončíme bufferovanie a vygenerujeme všetky DEFVAR + telo
     end_function_body_buffering();
 
     generate_function_end(func_name);
@@ -619,12 +513,10 @@ void block()
     consume_token(LEFT_BRACE);
     consume_token(EOL); // '{ EOL'
 
-    // Enter new nesting level
     symtable_enter_nesting(parser.symtable);
 
     statement_list();
 
-    // Exit nesting level and clean up variables
     symtable_exit_nesting(parser.symtable);
 
     check_token(RIGHT_BRACE); // '}'
@@ -718,7 +610,7 @@ void var_decl()
     consume_token(EOL);
 }
 
-// Helper function to parse AST node from current token (for built-in parameters)
+// pomocná funkcia na parsovanie AST uzla z aktuálneho tokenu (pre parametre vstavaných funkcií)
 static t_ast_node *parse_builtin_param()
 {
     t_ast_node *param_ast = NULL;
@@ -733,18 +625,18 @@ static t_ast_node *parse_builtin_param()
         (parser.current_token->type == KEYWORD &&
          parser.current_token->value.keyword == KW_NULL_INST))
     {
-        // Create a copy of the current token to preserve its value
+        // Vytvoríme kópiu aktuálneho tokenu, aby sme zachovali jeho hodnotu
         t_token *token_copy = malloc(sizeof(t_token));
         if (token_copy == NULL)
         {
             exit_with_error(ERR_INTERNAL, "Internal error: Memory allocation failed");
         }
 
-        // Deep copy the token
+        // Hlboká kópia tokenu
         token_copy->type = parser.current_token->type;
         token_copy->value = parser.current_token->value;
 
-        // For strings, make a copy of the string data
+        // Pre reťazce vytvoríme kópiu reťazcových dát
         if (parser.current_token->type == STRING_LITERAL ||
             parser.current_token->type == IDENTIFIER ||
             parser.current_token->type == GLOBAL_VAR)
@@ -857,16 +749,14 @@ void assign()
             char *builtin_name = parser.current_token->value.string;
             consume_token(LEFT_PAREN);
 
-            // Generate code to assign result to global variable
+            // priradenie do globálnej premennej
             char result_var[512];
             snprintf(result_var, sizeof(result_var), "GF@__%s", var_name);
 
-            // Globálna premenná už je deklarovaná na začiatku programu
-
-            // Process built-in function based on type
+            // Spracujeme vstavanú funkciu podľa typu
             if (strcmp(builtin_name, "write") == 0)
             {
-                // write returns null
+                // write vracia null
                 next_token();
                 t_ast_node *param = parse_builtin_param();
                 generate_builtin_write(param);
@@ -991,7 +881,6 @@ void assign()
                 // Skopírujeme návratovú hodnotu do globálnej premennej
                 generate_move_retval_to_global_var(var_name);
 
-                // Mark as initialized
                 symtable_mark_global_initialized(parser.global_symtable, var_name);
 
                 consume_token(EOL);
@@ -1002,7 +891,6 @@ void assign()
                 ast = expression(&saved_identifier, parser.current_token);
                 generate_global_assignment(var_name, ast);
 
-                // Mark as initialized
                 symtable_mark_global_initialized(parser.global_symtable, var_name);
 
                 check_token(EOL);
@@ -1014,7 +902,6 @@ void assign()
             ast = expression(parser.current_token, NULL);
             generate_global_assignment(var_name, ast);
 
-            // Mark as initialized
             symtable_mark_global_initialized(parser.global_symtable, var_name);
 
             check_token(EOL);
@@ -1115,21 +1002,20 @@ void assign()
         char *builtin_name = parser.current_token->value.string;
         consume_token(LEFT_PAREN);
 
-        // Declare result variable first
         t_avl_node *var_node = symtable_search_var_scoped(parser.symtable, var_name);
         int block_id = (var_node && var_node->ifj_sym_type == SYM_VAR_LOCAL) ? var_node->ifj_data.ifj_var.ifj_block_id : 0;
         const char *result_var_name = get_var_name_with_nesting(var_name, block_id);
         char result_var[512];
         snprintf(result_var, sizeof(result_var), "LF@%s", result_var_name);
 
-        // Generate code based on built-in function type
+        // Spracujeme vstavanú funkciu podľa typu
         if (strcmp(builtin_name, "write") == 0)
         {
-            // write returns null, but we need to call it and store null in result
+            // write vracia null, ale musíme ju zavolať a uložiť null do výsledku
             next_token();
             t_ast_node *param = parse_builtin_param();
             generate_builtin_write(param);
-            // Store null as the result (write returns null)
+            // Uložíme null ako výsledok (write vracia null)
             fprintf(stdout, "MOVE %s nil@nil\n", result_var);
             consume_token(RIGHT_PAREN);
         }
@@ -1378,7 +1264,6 @@ void func_call()
         char *func_name = parser.current_token->value.string;
         consume_token(LEFT_PAREN);
 
-        // Handle all built-in functions
         if (strcmp(func_name, "write") == 0)
         {
             // Ifj.write(term) - výpis hodnoty
@@ -1389,41 +1274,34 @@ void func_call()
         }
         else if (strcmp(func_name, "read_str") == 0)
         {
-            // Ifj.read_str() - načítanie stringu (no parameters, handled in assign)
             consume_token(RIGHT_PAREN);
         }
         else if (strcmp(func_name, "read_num") == 0)
         {
-            // Ifj.read_num() - načítanie čísla (no parameters, handled in assign)
             consume_token(RIGHT_PAREN);
         }
         else if (strcmp(func_name, "floor") == 0)
         {
-            // Ifj.floor(term) - handled in assign when used with assignment
             next_token();
             consume_token(RIGHT_PAREN);
         }
         else if (strcmp(func_name, "str") == 0)
         {
-            // Ifj.str(term) - handled in assign
             next_token();
             consume_token(RIGHT_PAREN);
         }
         else if (strcmp(func_name, "length") == 0)
         {
-            // Ifj.length(s) - handled in assign
             next_token();
             consume_token(RIGHT_PAREN);
         }
         else if (strcmp(func_name, "chr") == 0)
         {
-            // Ifj.chr(i) - handled in assign
             next_token();
             consume_token(RIGHT_PAREN);
         }
         else if (strcmp(func_name, "ord") == 0)
         {
-            // Ifj.ord(s, i) - 2 parameters
             next_token();
             consume_token(COMMA);
             next_token();
@@ -1431,7 +1309,6 @@ void func_call()
         }
         else if (strcmp(func_name, "substring") == 0)
         {
-            // Ifj.substring(s, i, j) - 3 parameters
             next_token();
             consume_token(COMMA);
             next_token();
@@ -1441,7 +1318,6 @@ void func_call()
         }
         else if (strcmp(func_name, "strcmp") == 0)
         {
-            // Ifj.strcmp(s1, s2) - 2 parameters
             next_token();
             consume_token(COMMA);
             next_token();
@@ -1607,101 +1483,7 @@ t_ast_node *expression(t_token *token1, t_token *token2)
     {
         exit_with_error(ERR_SEM_OTHER, "Semantic error: Parsing expression %d", parser.scanner->line);
     }
-    // For debugging
-    // printf("Expression AST:\n");
-    // ast_print_tree(ast, 0);
     return ast;
-}
-
-void expression_continue()
-{
-    if (parser.current_token->type == EOL || parser.current_token->type == COMMA)
-    {
-        return;
-    }
-
-    next_token();
-    if (is_operator())
-    {
-        op();
-        term();
-        expression_continue();
-    }
-    else
-    {
-        // epsilon
-        return;
-    }
-}
-
-void term()
-{
-    if (parser.current_token->type == GLOBAL_VAR)
-    {
-        // TODO: Handle global variable access
-        return;
-    }
-
-    if (parser.current_token->type == IDENTIFIER)
-    {
-        // Uložíme token identifikátora
-        t_token saved_identifier = *parser.current_token;
-
-        // Look ahead aby sme zistili, či je to volanie funkcie
-        next_token();
-        if (parser.current_token->type == LEFT_PAREN)
-        {
-            // Volanie funkcie: identifier(...)
-            putback_token(); // Put back '('
-            *parser.current_token = saved_identifier;
-            func_call();
-        }
-        else
-        {
-            // identifier - put back the lookahead token
-            putback_token();
-        }
-        return;
-    }
-
-    if (parser.current_token->type == KEYWORD)
-    {
-        if (parser.current_token->value.keyword == KW_IFJ)
-        {
-            // Built-in function call
-            func_call();
-            return;
-        }
-        if (parser.current_token->value.keyword == KW_NULL_TYPE ||
-            parser.current_token->value.keyword == KW_NULL_INST ||
-            parser.current_token->value.keyword == KW_NUM ||
-            parser.current_token->value.keyword == KW_STRING)
-        {
-            return;
-        }
-    }
-
-    if (parser.current_token->type == NUM_INT ||
-        parser.current_token->type == NUM_FLOAT ||
-        parser.current_token->type == STRING_LITERAL ||
-        parser.current_token->type == NUM_EXP_INT ||
-        parser.current_token->type == NUM_EXP_FLOAT)
-    {
-        return;
-    }
-    else
-    {
-        exit_with_error(ERR_SYNTAX, "Syntax error: Invalid term at line %d", parser.scanner->line);
-    }
-}
-
-void op()
-{
-    if (!is_operator())
-    {
-        exit_with_error(ERR_SYNTAX, "Syntax error: Invalid operator at line %d", parser.scanner->line);
-    }
-    next_token();
 }
 
 bool is_operator()

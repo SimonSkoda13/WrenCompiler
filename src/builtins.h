@@ -4,6 +4,7 @@
  *
  * Autori:
  *   - Matúš Magyar (xmagyam00)
+ *   - Martin Michálik (xmicham00)
  */
 
 #ifndef WRENCOMPILER_BUILTINS_H

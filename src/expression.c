@@ -9,44 +9,6 @@
 
 #include "expression.h"
 
-//DEBUG
-void stack_print(t_stack *stack) {
-    if (stack == NULL || stack->top == NULL) {
-        printf("Stack: [empty]\n");
-        return;
-    }
-    
-    printf("Stack (top -> bottom): ");
-    t_stack_exp current = stack->top;
-    
-    while (current != NULL && current->data != PREC_EMPTY) {
-        switch (current->data) {
-            case PREC_LPAR:      printf("( "); break;
-            case PREC_RPAR:      printf(") "); break;
-            case PREC_IDENT:     printf("i "); break;
-            case PREC_PLUS:      printf("+ "); break;
-            case PREC_MINUS:     printf("- "); break;
-            case PREC_MUL:       printf("* "); break;
-            case PREC_DIV:       printf("/ "); break;
-            case PREC_LESS:      printf("< "); break;
-            case PREC_LESSEQ:    printf("<= "); break;
-            case PREC_GREATER:   printf("> "); break;
-            case PREC_GREATEREQ: printf(">= "); break;
-            case PREC_EQ:        printf("== "); break;
-            case PREC_NEQ:       printf("!= "); break;
-            case PREC_IS:        printf("is "); break;
-            case PREC_DOLLAR:    printf("$ "); break;
-            case S:              printf("<SHIFT> "); break;
-            case PREC_E:         printf("E "); break;
-            default:             printf("? "); break;
-        }
-        current = current->next_element;
-    }
-    
-    printf("$bottom\n");
-}
-
-
 prec_symbols precedence_table[15][15] = {
     // (    )    i    +    -    *    /    <    <=   >    >=   ==   !=   is   $
     {  S,   W,   S,   S,   S,   S,   S,   S,   S,   S,   S,   S,   S,   S,   ERR}, // (
@@ -123,9 +85,9 @@ prec_symbols map_token_to_enum(t_token *token) {
             }
         }
         case LEFT_BRACE:
-            return PREC_DOLLAR; // if statement if(expr) {...}
+            return PREC_DOLLAR;
         case EOL:
-            return PREC_DOLLAR; // Môžem jebať multiline výrazy v tomto farizejskom jazyku
+            return PREC_DOLLAR;
         default:
             // Neznámy token
             return PREC_INVALID;
@@ -213,7 +175,6 @@ int stack_empty(t_stack *stack) {
 }
 
 int correct_syntax(t_stack *stack) {
-    //
     return (stack->top != NULL && 
             stack->top->data == PREC_E &&
             stack->top->next_element != NULL &&
@@ -222,12 +183,12 @@ int correct_syntax(t_stack *stack) {
             stack->top->next_element->next_element->data == PREC_EMPTY);
 }
 
-// Helper function to check if AST node is a literal (not variable or complex expression)
+// Pomocná funkcia na kontrolu, či je uzol literál
 int is_literal(t_ast_node *node) {
     if (node == NULL || node->token == NULL) {
         return 0;
     }
-    // Literal if it's a leaf node (no children) and is a literal type
+    // Literál je listový uzol (bez detí) a je typu literálu
     return (node->left == NULL && node->right == NULL &&
             (node->token->type == NUM_INT || 
              node->token->type == NUM_EXP_INT ||
@@ -238,10 +199,10 @@ int is_literal(t_ast_node *node) {
              (node->token->type == KEYWORD && node->token->value.keyword == KW_NULL_INST)));
 }
 
-// Helper function to get literal type category: 0=unknown, 1=number, 2=string, 3=null
+// Pomocná funkcia na získanie kategórie typu literálu: 0=neznámy, 1=číslo, 2=reťazec, 3=null
 int get_literal_type_category(t_ast_node *node) {
     if (!is_literal(node)) {
-        return 0; // Not a literal
+        return 0; // Nie je literál
     }
     
     if (node->token->type == NUM_INT || 
@@ -258,28 +219,28 @@ int get_literal_type_category(t_ast_node *node) {
     return 0;
 }
 
-// Check if node is a valid type keyword for 'is' operator (Num, String, or Null)
+// Pomocná funkcia na kontrolu, či je uzol platným typovým kľúčovým slovom pre operátor 'is' (Num, String alebo Null)
 int is_valid_type_keyword(t_ast_node *node) {
     if (node == NULL || node->token == NULL) {
         return 0;
     }
     
-    // Must be a leaf node (no children) and a keyword
+    // Musí byť listový uzol (bez detí) a kľúčové slovo
     if (node->left != NULL || node->right != NULL || node->token->type != KEYWORD) {
         return 0;
     }
     
-    // Must be one of the type keywords
+    // Musí byť jedno z typových kľúčových slov
     e_keyword kw = node->token->value.keyword;
     return (kw == KW_NUM || kw == KW_STRING || kw == KW_NULL_TYPE);
 }
 
-// Type check for binary operations on literals
+// Pomocná funkcia na kontrolu typov literálov pre binárne operácie
 void check_binary_literal_types(e_token_type operator, t_ast_node *left, t_ast_node *right) {
     int left_type = get_literal_type_category(left);
     int right_type = get_literal_type_category(right);
     
-    // Special check for 'is' operator - right side must be a type keyword
+    // Špeciálna kontrola pre operátor 'is' - pravá strana musí byť typové kľúčové slovo
     if (operator == OP_IS) {
         if (!is_valid_type_keyword(right)) {
             exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Right operand of 'is' must be Num, String, or Null");
@@ -287,19 +248,19 @@ void check_binary_literal_types(e_token_type operator, t_ast_node *left, t_ast_n
         return;
     }
     
-    // If neither is a literal, we can't check statically
+    // Ak ani jeden nie je literál, nemôžeme staticky kontrolovať
     if (left_type == 0 && right_type == 0) {
         return;
     }
     
-    // Type checking based on operator
+    // Kontrola typov na základe operátora
     if (operator == OP_ADD) {
-        // Addition: string + string OK, number + number OK, but string + number ERROR
+        // Add: string + string OK, number + number OK, string + number ERROR
         if ((left_type == 2 && right_type == 1) || (left_type == 1 && right_type == 2)) {
             exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Cannot add string and number");
         }
     } else if (operator == OP_MUL) {
-        // Multiplication: number * number OK, string * number OK, but number * string ERROR, string * string ERROR
+        // Multiply: number * number OK, string * number OK, number * string ERROR, string * string ERROR
         if ((left_type == 1 && right_type == 2) || (left_type == 2 && right_type == 2)) {
             exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Invalid types for multiplication");
         }
@@ -310,12 +271,12 @@ void check_binary_literal_types(e_token_type operator, t_ast_node *left, t_ast_n
         }
     } else if (operator == OP_LESS_THAN || operator == OP_LESS_EQUAL || 
                operator == OP_GREATER_THAN || operator == OP_GREATER_THAN_EQUAL) {
-        // Relational operators (except == and !=): both operands must be numbers
+        // Relačné operátory (okrem == a !=): obe strany musia byť čísla
         if ((left_type != 0 && left_type != 1) || (right_type != 0 && right_type != 1)) {
             exit_with_error(ERR_SEM_TYPE_COMPAT, "Type error: Relational operators require numeric operands");
         }
     }
-    // For == and != operators, we allow mixed types (runtime will handle)
+    // Pre operátory == a != povoľujeme zmiešané typy (runtime ich ošetrí)
 }
 
 int rule_reduction(t_stack *stack) {
@@ -351,7 +312,7 @@ if (stack_data[0]->data == PREC_RPAR && stack_data[1]->data == PREC_E &&
     stack->top->tree = stack_data[1]->tree;
     return 1;
 }
-// E -> E op E, op are operators in precedence table
+// E -> E op E
 if (stack_data[0]->data == PREC_E && stack_data[2]->data == PREC_E) {
     t_ast_node *tree_ptr;
     t_token *operator = malloc(sizeof(t_token));
@@ -444,7 +405,7 @@ int parse_expression(t_token *token1, t_token *token2, t_ast_node **tree) {
         second_token = 1;
     }
 
-    t_token current_token_storage;  // Local storage for token
+    t_token current_token_storage;  // Local storage pre token
     t_token *current_token = &current_token_storage;
     prec_symbols current_token_enum;
     // Prvý token z parsera
@@ -468,8 +429,6 @@ int parse_expression(t_token *token1, t_token *token2, t_ast_node **tree) {
     stack_push(&stack, PREC_DOLLAR);
 
     do {
-    // For debugging
-    // stack_print(&stack);
     top = stack_top_terminal(&stack);
     switch (precedence_table[top][current_token_enum]) {
         case W:  // Wait -> získame ďalší token a pushnem ten ktorý máme
@@ -499,7 +458,6 @@ int parse_expression(t_token *token1, t_token *token2, t_ast_node **tree) {
             if (!first_token_used) {
                 // Ak sme práve začali parsovať expression
                 first_token_used = 1;
-                //TODO: jednoduché priradenie x = y
             }
             current_token_enum = map_token_to_enum(current_token);
             if (current_token_enum == PREC_INVALID) {
@@ -520,7 +478,6 @@ int parse_expression(t_token *token1, t_token *token2, t_ast_node **tree) {
         }
     } while ((current_token_enum != PREC_DOLLAR) || (correct_syntax(&stack) == 0));
     if (correct_syntax(&stack)) {
-        //TODO: handle expression na multiple lines
         *tree = stack.top->tree;
         return 0;
     }

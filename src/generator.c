@@ -944,7 +944,6 @@ void get_value_string(t_ast_node *node, char *result, size_t result_size)
         }
         else
         {
-            // Not found - use as is (should not happen with proper semantic checking)
             snprintf(result, result_size, "LF@%s", node->token->value.string);
         }
         break;

@@ -99,6 +99,8 @@ zip:
 	@rm -f xmicham00.zip
 	@cd $(SRC_DIR) && zip -j ../xmicham00.zip $$(ls *.c *.h 2>/dev/null | grep -v '_test\.c')
 	@zip -u xmicham00.zip Makefile
+	@zip -j -u xmicham00.zip documents/documentation/rozdeleni
+	@zip -j -u xmicham00.zip documents/documentation/dokumentace.pdf
 
 # Run tests (placeholder for now)
 test: $(TARGET)

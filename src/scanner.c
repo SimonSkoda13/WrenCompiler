@@ -25,7 +25,6 @@ int get_next_token(t_scanner *scanner, t_token *token) {
     int c;
     c = skip(scanner); //skip whitespace
     
-    //Takto sa robí FSM v C-éčku
     switch (c) {
         case EOF:
             token->type = END_OF_FILE;
@@ -121,15 +120,13 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                 return LEX_OK;
             }
         case '"': {
-            //Toto je diablovo dielo lebo musíme podporovať multiline stringy cez """
-            //a zároveň escapovanie znakov
             int cap = 256; //počiatočná kapacita bufferu pre string (256 lebo prečo nie)
             int len = 0; //aktuálna dĺžka stringu
 
             char *buf = malloc(cap);
             if (buf == NULL) return 1;
 
-            c = next_char(scanner); //načítame ďalší znak a môže sa začať peklo 
+            c = next_char(scanner);
             while (c != '"' && c != EOF && c != '\n') {
                 // Handle escape sequences
                 if (c == '\\') {
@@ -257,7 +254,6 @@ int get_next_token(t_scanner *scanner, t_token *token) {
             return LEX_OK;
         }
         case '0':
-            //Toto je tiež sranda lebo čísla môžu byť hexadecimálne a exponenciálne
             c = next_char(scanner);
             if (c == 'x' || c == 'X') {
                 //hexadecimal number
@@ -265,13 +261,12 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                 int i = 0;
                 int d = next_char(scanner);
 
-                /* collect hex digits */
                 while (d != EOF && isxdigit(d)) {
                     if (i < (int)sizeof(buf) - 1) buf[i++] = (char)d;
                     d = next_char(scanner);
                 }
 
-                if (i == 0) { /* no hex digits -> lex error */
+                if (i == 0) {
                     putback(d, scanner);
                     err_code = ERR_LEXICAL;
                     return LEX_ERROR;
@@ -282,7 +277,7 @@ int get_next_token(t_scanner *scanner, t_token *token) {
 
                 errno = 0;
                 long val = strtoull(buf, NULL, 16);
-                if (errno == ERANGE) { //overflow
+                if (errno == ERANGE) {
                     err_code = ERR_INTERNAL;
                     return LEX_ERROR;
                 }
@@ -314,7 +309,7 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                 }
                 float_buf[float_len] = '\0';
                 int_buf[int_part_len] = '\0';
-                // Build full numeric text safely: "<int>.<frac>[e[+-]<digits>]"
+                // "<int>.<frac>[e[+-]<digits>]"
                 char num_buf[256];
                 int nwritten = snprintf(num_buf, sizeof num_buf, "%s.%s", int_buf, float_buf);
                 if (nwritten < 0 || nwritten >= (int)sizeof num_buf) {
@@ -473,7 +468,7 @@ int get_next_token(t_scanner *scanner, t_token *token) {
                     }
                     float_buf[dec_part_len] = '\0';
                     int_buf[int_part_len] = '\0';
-                    // Build full numeric text safely: "<int>.<frac>[e[+-]<digits>]"
+                    // "<int>.<frac>[e[+-]<digits>]"
                     char num_buf[256];
                     int nwritten = snprintf(num_buf, sizeof num_buf, "%s.%s", int_buf, float_buf);
                     if (nwritten < 0 || nwritten >= (int)sizeof num_buf) {

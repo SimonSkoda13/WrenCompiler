@@ -24,7 +24,6 @@
  */
 static int get_height(t_avl_node *ifj_node)
 {
-  // TODO: Implementovat získání výšky uzlu
   if (ifj_node == NULL)
   {
     return 0;
@@ -39,7 +38,6 @@ static int get_height(t_avl_node *ifj_node)
  */
 static int get_balance(t_avl_node *ifj_node)
 {
-  // TODO: Implementovat výpočet balance faktoru
   if (ifj_node == NULL)
   {
     return 0;
@@ -53,7 +51,6 @@ static int get_balance(t_avl_node *ifj_node)
  */
 static void update_height(t_avl_node *ifj_node)
 {
-  // TODO: Implementovat aktualizaci výšky
   if (ifj_node == NULL)
   {
     return;
@@ -244,7 +241,6 @@ static t_avl_node *create_node(const char *ifj_key, e_symbol_type ifj_type)
  */
 static void destroy_node(t_avl_node *ifj_node)
 {
-  // TODO: Implementovat rekurzivní uvolnění uzlů
   // Post-order traversal: left, right, then current
   if (ifj_node == NULL)
   {
@@ -273,7 +269,6 @@ static void destroy_node(t_avl_node *ifj_node)
 
 void symtable_init(t_symtable *ifj_table)
 {
-  // TODO: Implementovat inicializaci tabulky
   if (ifj_table == NULL)
   {
     return;
@@ -293,7 +288,6 @@ void symtable_init(t_symtable *ifj_table)
 
 void symtable_destroy(t_symtable *ifj_table)
 {
-  // TODO: Implementovat uvolnění tabulky
   if (ifj_table == NULL)
   {
     return;
@@ -467,7 +461,6 @@ bool symtable_insert_func(t_symtable *ifj_table, const char *ifj_key,
  */
 static t_avl_node *search_recursive(t_avl_node *ifj_node, const char *ifj_key)
 {
-  // TODO: Implementovat rekurzivní vyhledávání
   if (ifj_node == NULL)
   {
     return NULL;
@@ -653,7 +646,6 @@ static t_avl_node *delete_recursive(t_avl_node *ifj_node, const char *ifj_key,
 
 bool symtable_delete(t_symtable *ifj_table, const char *ifj_key)
 {
-  // TODO: Implementovat smazání symbolu
   if (ifj_table == NULL || ifj_key == NULL)
   {
     return false;
@@ -666,7 +658,6 @@ bool symtable_delete(t_symtable *ifj_table, const char *ifj_key)
 
 void symtable_enter_scope(t_symtable *ifj_table)
 {
-  // TODO: Implementovat vstup do scope
   if (ifj_table == NULL)
   {
     return;
