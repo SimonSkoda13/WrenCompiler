@@ -21,9 +21,10 @@ e_error_code err_code;
  * @return 0 ak sa podarilo načítať token, 1 ak nastala lexikálna chyba.
  */
 int get_next_token(t_scanner *scanner, t_token *token) {
+    err_code = NO_ERROR; // Reset erroru pri každom volaní
     int c;
     c = skip(scanner); //skip whitespace
-
+    
     //Takto sa robí FSM v C-éčku
     switch (c) {
         case EOF:
@@ -55,7 +56,7 @@ int get_next_token(t_scanner *scanner, t_token *token) {
             } else {
                 putback(c, scanner);
             }
-            return 0;
+            return LEX_OK;
         case '<':
             token->type = OP_LESS_THAN;
             c = next_char(scanner);

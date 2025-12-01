@@ -1820,7 +1820,7 @@ void generate_builtin_function_definitions()
     printf("POPFRAME\n");
     printf("RETURN\n");
 
-    // ord(s, i) - string, int -> int or null
+    // ord(s, i) - string, int -> int
     printf("\n# Builtin function: ord\n");
     printf("LABEL $$__builtin_ord\n");
     printf("CREATEFRAME\n");
@@ -1869,7 +1869,7 @@ void generate_builtin_function_definitions()
     printf("LT LF@%%cmp LF@%%param2_int LF@%%len\n");
     printf("JUMPIFEQ $$ord_ok LF@%%cmp bool@true\n");
     printf("LABEL $$ord_null\n");
-    printf("PUSHS nil@nil\n");
+    printf("PUSHS int@0\n");// Return pri chybe musi byt int hodnota 0
     printf("POPFRAME\n");
     printf("RETURN\n");
     printf("LABEL $$ord_ok\n");

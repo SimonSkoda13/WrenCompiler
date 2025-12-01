@@ -21,3 +21,5 @@ compiler
 # Test outputs
 tests/output/
 *.ifjcode
+
+
