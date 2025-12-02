@@ -4,6 +4,7 @@
  *
  * Autori:
  *   - Martin Michálik (xmicham00)
+ *   - Matúš Magyar (xmagyam00)
  */
 
 #include "parser.h"

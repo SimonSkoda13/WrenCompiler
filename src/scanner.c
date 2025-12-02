@@ -4,6 +4,7 @@
  *
  * Autori:
  *   - Martin Michálik (xmicham00)
+ *   - Šimon Škoda (xskodas00)
  */
 #include "scanner.h"
 #include "errors.h"

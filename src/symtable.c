@@ -5,6 +5,7 @@
  * Autori:
  *   - Martin Michálik (xmicham00)
  *   - Šimon Škoda (xskodas00)
+ *   - Jaroslav Vrbiniak (xvrbinj00)
  */
 
 #define _POSIX_C_SOURCE 200809L

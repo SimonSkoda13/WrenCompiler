@@ -1,6 +1,7 @@
 /*
  * AST uzly pre IFJ25
- * Autor: Matúš Magyar (xmagyam00)
+ * Autor: 
+ *   - Matúš Magyar (xmagyam00)
  */
 
 #include <stdlib.h>
