@@ -1,0 +1,375 @@
+\documentclass[11pt,a4paper]{article}
+
+% Balíčky pre slovenčinu a formátovanie
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[slovak]{babel}
+\usepackage{graphicx}      % Pre vkladanie obrázkov
+\usepackage{geometry}      % Okraje stránky
+\usepackage{hyperref}      % Klikateľný obsah
+\usepackage{tabularx}      % Tabuľky
+\usepackage{indentfirst}   % Odsadenie prvého odseku
+\usepackage{amsmath}       % Matematika
+\usepackage{listings}      % Pre kód a gramatiku
+
+% Nastavenie okrajov (štandard pre VUT FIT)
+\geometry{
+    textheight=230mm,
+    textwidth=160mm,
+    top=30mm,
+    left=25mm,
+    right=25mm
+}
+
+\begin{document}
+
+% ---------------- TITULNÁ STRANA ----------------
+\begin{titlepage}
+    \begin{center}
+        \includegraphics[width=0.6\textwidth]{logo_fit.png} % Tu treba nahrať logo FIT, ak nemáte, riadok zakomentujte (%)
+        \vspace{3cm}
+
+        {\Large \textsc{Vysoké učení technické v Brně}}\\
+        {\Large \textsc{Fakulta informačních technologií}}\\
+        \vspace{2cm}
+
+        {\Huge \textbf{Dokumentácia k projektu IFJ/IAL}}\\
+        \vspace{1cm}
+        {\Large Implementácia prekladača imperatívneho jazyka IFJ25}\\
+        \vspace{3cm}
+
+        {\large \textbf{Tím xmicham00, varianta vv-BVS}}
+        \vspace{0.3cm}
+        
+        {\large \textbf{Implementované rozšírenia: žiadne}}
+        \vspace{1cm}
+
+        \begin{table}[h!]
+            \centering
+            \begin{tabular}{l l l l}
+                \textbf{Martin Michálik} & (xmicham00) & 25\% & [Vedúci] \\
+                \textbf{Matúš Magyar}    & (xmagyam00) & 25\% & \\
+                \textbf{Šimon Škoda}     & (xskodas00) & 25\% & \\
+                \textbf{Jaroslav Vrbiniak} & (xvrbinj00) & 25\% & \\
+            \end{tabular}
+        \end{table}
+
+        \vfill
+        Brno, \today
+    \end{center}
+\end{titlepage}
+
+% ---------------- OBSAH ----------------
+\tableofcontents
+\newpage
+
+% ---------------- TEXT DOKUMENTU ----------------
+
+\section{Úvod}
+Táto dokumentácia popisuje návrh a implementáciu prekladača jazyka IFJ25 do medzikódu IFJcode25. Cieľom projektu bolo vytvoriť funkčný prekladač, ktorý spracúva zdrojový kód v jazyku IFJ25 a generuje ekvivalentný program v jazyku IFJcode25.
+
+Prekladač sa skladá z niekoľkých na seba nadväzujúcich častí: lexikálny analyzátor (scanner), syntaktický analyzátor (parser) využívajúci metódu rekurzívneho zostupu, precedenčný syntaktický analyzátor pre výrazy, sémantický analyzátor a generátor cieľového kódu.
+
+Projekt bol implementovaný v jazyku C a vyvíjaný v termíne od 14.10.2025 do 03.12.2025.
+
+\section{Architektúra projektu}
+Zdrojové súbory v projekte sú rozdelené podľa funkcie:
+
+\begin{itemize}
+    \item \texttt{ast.c/h} -- abstraktný syntaktický strom
+    \item \texttt{builtins.c/h} -- spracovanie vstavaných funkcií
+    \item \texttt{errors.c/h} -- správa chybových kódov
+    \item \texttt{expression.c/h} -- precedenčná analýza výrazov
+    \item \texttt{generator.c/h} -- generovanie IFJcode25
+    \item \texttt{main.c} -- vstupný bod programu
+    \item \texttt{parser.c/h} -- syntaktická analýza a riadenie prekladu
+    \item \texttt{scanner.c/h} -- lexikálna analýza
+    \item \texttt{symtable.c/h} -- tabuľka symbolov (AVL strom)
+\end{itemize}
+
+\section{Lexikálna analýza}
+Modul \texttt{scanner.c} implementuje lexikálny analyzátor ako deterministický konečný automat (DKA). Hlavná funkcia \texttt{get\_next\_token()} používa veľký \texttt{switch} na vetvenie podľa aktuálneho znaku, čo zodpovedá stavom DKA.
+
+\subsection{Kľúčové implementácie}
+Pri spracovaní reťazcových literálov používame dynamický buffer s počiatočnou kapacitou 256 bajtov, ktorý sa automaticky zdvojnásobuje pri preplnení. Táto technika zabezpečuje efektívne spracovanie aj veľmi dlhých reťazcov bez plytvenia pamäťou.
+
+Multi-line stringy sú rozpoznávané hľadaním trojice \texttt{"""} -- scanner najprv rozpozná bežný string, a ak začína ďalším \texttt{"}, prechádza do režimu viacriadkového reťazca. V tomto režime sa znaky ukladajú priamo do bufferu až kým sa nenájde ukončovacia trojica.
+
+Vnorené blokové komentáre sú implementované rekurzívne pomocou funkcie \texttt{ignore\_multiline\_comment()}. Pri nájdení \texttt{/*} vo vnútri komentára sa funkcia zavolá rekurzívne, čo automaticky spracuje ľubovoľne hlboké vnorenie.
+
+Hexadecimálne čísla rozpoznávame po prefixi \texttt{0x} alebo \texttt{0X} pomocou funkcie \texttt{strtoull()} so základom 16. Exponenciálny zápis je rozpoznaný pri výskyte znaku \texttt{e}/\texttt{E} a výsledok sa vypočítava pomocou \texttt{powf()}/\texttt{pow()}.
+
+\clearpage
+
+\subsection{Diagram konečného automatu}
+\begin{figure}[h!]
+    \centering
+    \includegraphics[width=\textwidth]{fsm.png} 
+    \caption{Diagram konečného automatu (FSM) použitý v lexikálnej analýze.}
+    \label{fig:fsm}
+\end{figure}
+
+\section{Syntaktická analýza}
+Parser je implementovaný v module \texttt{parser.c} metódou rekurzívneho zostupu.
+
+\subsection{Správa tokenov}
+Parser obsahuje mechanizmus \texttt{putback\_token()}, ktorý umožňuje vrátiť jeden token späť do prúdu. Toto je nevyhnutné v situáciách, keď potrebujeme \uv{nahliadnuť dopredu} na nasledujúci token bez jeho konzumovania.
+
+\subsection{Name mangling}
+Pre podporu preťažovania funkcií (rovnaké meno, rôzny počet parametrov) používame \emph{name mangling}. Funkcia \texttt{foo} s dvoma parametrami sa interne ukladá ako \texttt{foo\$arity2}. Podobne gettery a settery používajú sufixy \texttt{\$get} a \texttt{\$set}. Tento prístup umožňuje jednoznačnú identifikáciu každej varianty funkcie v tabuľke symbolov.
+
+\subsection{Odložená validácia volaní}
+Volania funkcií sa zaznamenávajú do linked listu \texttt{function\_calls\_list} obsahujúceho názov, aritu a číslo riadku. Samotná validácia prebieha až po spracovaní celého programu funkciou \texttt{validate\_function\_calls()}. To umožňuje volať funkcie, ktoré sú definované až neskôr v kóde.
+
+\subsection{Spracovanie výrazov}
+Modul \texttt{expression.c} implementuje precedenčnú analýzu pomocou zásobníkovej metódy. Precedenčná tabuľka 15x15 definuje vzťahy medzi operátormi pomocou symbolov \texttt{<} (posun), \texttt{>} (redukcia), \texttt{=} (rovnosť) a prázdne pole (chyba). Analýza konštruuje abstraktný syntaktický strom (AST), ktorý sa následne použije pre generovanie kódu.
+
+\subsubsection{Precedenčná tabuľka}
+\begin{table}[h!]
+\centering
+\scriptsize
+\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+\hline
+& \textbf{(} & \textbf{)} & \textbf{i} & \textbf{+} & \textbf{-} & \textbf{*} & \textbf{/} & \textbf{<} & \textbf{<=} & \textbf{>} & \textbf{>=} & \textbf{==} & \textbf{!=} & \textbf{is} & \textbf{\$} \\
+\hline
+\textbf{(}  & < & = & < & < & < & < & < & < & < & < & < & < & < & < &   \\
+\textbf{)}  &   & > &   & > & > & > & > & > & > & > & > & > & > & > & > \\
+\textbf{i}  &   & > &   & > & > & > & > & > & > & > & > & > & > & > & > \\
+\textbf{+}  & < & > & < & > & > & < & < & > & > & > & > & > & > & > & > \\
+\textbf{-}  & < & > & < & > & > & < & < & > & > & > & > & > & > & > & > \\
+\textbf{*}  & < & > & < & > & > & > & > & > & > & > & > & > & > & > & > \\
+\textbf{/}  & < & > & < & > & > & > & > & > & > & > & > & > & > & > & > \\
+\textbf{<}  & < & > & < & < & < & < & < &   &   &   &   &   &   &   & > \\
+\textbf{<=} & < & > & < & < & < & < & < &   &   &   &   &   &   &   & > \\
+\textbf{>}  & < & > & < & < & < & < & < &   &   &   &   &   &   &   & > \\
+\textbf{>=} & < & > & < & < & < & < & < &   &   &   &   &   &   &   & > \\
+\textbf{==} & < & > & < & < & < & < & < &   &   &   &   &   &   &   & > \\
+\textbf{!=} & < & > & < & < & < & < & < &   &   &   &   &   &   &   & > \\
+\textbf{is} & < & > & < & < & < & < & < &   &   &   &   &   &   &   & > \\
+\textbf{\$} & < &   & < & < & < & < & < & < & < & < & < & < & < & < &   \\
+\hline
+\end{tabular}
+\caption{Precedenčná tabuľka pre výrazy (i = identifikátor/literál, \$ = koniec výrazu)}
+\end{table}
+
+Priamo počas redukcie sa vykonáva typová kontrola literálov -- funkcia \texttt{check\_binary\_literal\_types()} overuje kompatibilitu typov pre binárne operácie.
+
+\subsection{LL gramatika}
+Pre syntaktickú analýzu jazykových konštrukcií bola navrhnutá LL(1) gramatika. Gramatika obsahuje 24 neterminálov a 56 pravidiel:
+
+\begin{verbatim}
+1.  <prolog>         -> import STRING for Ifj EOL <eols>
+2.  <program>        -> class IDENTIFIER { EOL <func_list> }
+3.  <main_func>      -> static IDENTIFIER ( ) <block>
+4.  <func_list>      -> }
+5.  <func_list>      -> <func> <func_list>
+6.  <func>           -> static IDENTIFIER ( <param_list> ) <block>
+7.  <func>           -> static IDENTIFIER { <block>
+8.  <func>           -> static IDENTIFIER = ( IDENTIFIER ) <block>
+9.  <param_list>     -> )
+10. <param_list>     -> IDENTIFIER <param_list_tail>
+11. <param_list_tail>-> )
+12. <param_list_tail>-> , IDENTIFIER <param_list_tail>
+13. <block>          -> { EOL <stmt_list> }
+14. <stmt_list>      -> }
+15. <stmt_list>      -> <stmt> EOL <stmt_list>
+16. <stmt>           -> <var_decl>
+17. <stmt>           -> <assign>
+18. <stmt>           -> <if_stmt>
+19. <stmt>           -> <while_stmt>
+20. <stmt>           -> <return_stmt>
+21. <stmt>           -> <func_call>
+22. <stmt>           -> <block>
+23. <var_decl>       -> var IDENTIFIER EOL
+24. <assign>         -> IDENTIFIER = <expr>
+25. <assign>         -> IDENTIFIER . IDENTIFIER = <expr>
+26. <if_stmt>        -> if ( <expr> ) <block> else <block>
+27. <while_stmt>     -> while ( <expr> ) <block>
+28. <return_stmt>    -> return <expr>
+29. <func_call>      -> IDENTIFIER ( <arg_list> )
+30. <func_call>      -> Ifj . IDENTIFIER ( <arg_list> )
+31. <arg_list>       -> )
+32. <arg_list>       -> <expr> <arg_list_tail>
+33. <arg_list_tail>  -> )
+34. <arg_list_tail>  -> , <expr> <arg_list_tail>
+35. <expr>           -> <term> <expr_cont>
+36. <expr_cont>      -> eps
+37. <expr_cont>      -> <op> <expr>
+38. <term>           -> IDENTIFIER
+39. <term>           -> INT_LITERAL
+40. <term>           -> FLOAT_LITERAL
+41. <term>           -> STRING_LITERAL
+42. <term>           -> null
+43. <term>           -> ( <expr> )
+44. <op>             -> +
+45. <op>             -> -
+46. <op>             -> *
+47. <op>             -> /
+48. <op>             -> ==
+49. <op>             -> !=
+50. <op>             -> <
+51. <op>             -> <=
+52. <op>             -> >
+53. <op>             -> >=
+54. <op>             -> is
+55. <eols>           -> EOF
+56. <eols>           -> EOL <eols>
+\end{verbatim}
+
+\subsection{LL tabuľka}
+Rozkladová tabuľka pre LL(1) analýzu. Bunky obsahujú čísla pravidiel gramatiky, prázdne bunky znamenajú syntaktickú chybu.
+
+\begin{table}[h!]
+\centering
+\tiny
+\setlength{\tabcolsep}{1pt}
+\begin{tabular}{|l|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+\hline
+\textbf{Neterminál} & \textbf{(} & \textbf{)} & \textbf{,} & \textbf{EOF} & \textbf{EOL} & \textbf{FLT} & \textbf{ID} & \textbf{INT} & \textbf{Ifj} & \textbf{Null} & \textbf{/} & \textbf{==} & \textbf{is} & \textbf{+} & \textbf{STR} & \textbf{cls} & \textbf{if} & \textbf{ret} & \textbf{sta} & \textbf{var} & \textbf{whi} & \textbf{\{} \\
+\hline
+arg\_list        & 32 & 31 &  &  &  & 32 & 32 & 32 &  & 32 &  &  &  &  & 32 &  &  &  &  &  &  &  \\
+arg\_list\_tail  &  & 33 & 34 &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+assign           &  &  &  &  &  &  & 24 &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+block            &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 13 \\
+eols             &  &  &  & 55 & 56 &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+expr             & 35 &  &  &  &  & 35 & 35 & 35 &  & 35 &  &  &  &  & 35 &  &  &  &  &  &  &  \\
+expr\_cont       &  & 36 & 36 &  & 36 &  &  &  &  &  & 37 & 37 & 37 & 37 &  &  &  &  &  &  &  &  \\
+func             &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 6 &  &  &  \\
+func\_call       &  &  &  &  &  &  & 29 &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+func\_list       &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 5 &  &  & 4 \\
+if\_stmt         &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 26 &  &  &  &  &  \\
+main\_func       &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 3 &  &  &  \\
+op               &  &  &  &  &  &  &  &  &  &  & 47 & 48 & 54 & 44 &  &  &  &  &  &  &  &  \\
+param\_list      &  & 9 &  &  &  &  & 10 &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+param\_list\_tail&  & 11 & 12 &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  \\
+program          &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 2 &  &  &  &  &  &  \\
+return\_stmt     &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 28 &  &  &  &  \\
+stmt             &  &  &  &  &  &  & 17 &  &  &  &  &  &  &  &  &  & 18 & 20 &  & 16 & 19 &  \\
+stmt\_list       &  &  &  &  &  &  & 15 &  &  &  &  &  &  &  &  &  & 15 & 15 &  & 15 & 15 & 14 \\
+term             & 43 &  &  &  &  & 40 & 38 & 39 &  & 42 &  &  &  &  & 41 &  &  &  &  &  &  &  \\
+var\_decl        &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 23 &  &  \\
+while\_stmt      &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  &  & 27 &  \\
+\hline
+\end{tabular}
+\caption{LL(1) rozkladová tabuľka (skrátené: ID=IDENTIFIER, FLT=FLOAT\_LIT, INT=INT\_LIT, STR=STRING\_LIT, cls=class, ret=return, sta=static, whi=while)}
+\end{table}
+
+Kompletná LL tabuľka obsahuje 24 neterminálov a 35 terminálov. Pre operátory (\texttt{op}) tabuľka obsahuje pravidlá 44--54 pre jednotlivé operátory (+, -, *, /, ==, !=, <, <=, >, >=, is).
+
+\section{Tabuľka symbolov}
+Tabuľka symbolov je kľúčová dátová štruktúra, ktorá uchováva informácie o všetkých identifikátoroch (premenných, funkciách) počas prekladu.
+
+\subsection{Implementácia AVL stromom}
+Podľa požiadaviek predmetu IAL sme tabuľku symbolov implementovali ako AVL strom v module \texttt{symtable.c}. Použitie samovyvažujúceho binárneho vyhľadávacieho stromu garantuje logaritmickú časovú zložitosť $O(\log n)$ pre operácie vkladania, vyhľadávania aj mazania.
+
+Vyváženosť stromu je zabezpečená rotáciami po každom vložení:
+\begin{itemize}
+    \item \texttt{far\_left()} -- LL rotácia (pravá rotácia)
+    \item \texttt{far\_right()} -- RR rotácia (ľavá rotácia)
+    \item \texttt{left\_right()} -- LR rotácia (dvojitá)
+    \item \texttt{right\_left()} -- RL rotácia (dvojitá)
+\end{itemize}
+
+\subsection{Ukladané informácie}
+Každý uzol stromu obsahuje:
+\begin{itemize}
+    \item \textbf{Kľúč} -- názov symbolu (pre funkcie manglované meno)
+    \item \textbf{Typ symbolu} -- premenná lokálna/globálna, funkcia, getter, setter
+    \item \textbf{Pre premenné:} \texttt{block\_id}, \texttt{nesting\_level}, príznak inicializácie
+    \item \textbf{Pre funkcie:} počet parametrov, typy parametrov, návratový typ
+\end{itemize}
+
+\subsection{Správa rozsahov platnosti}
+Pre správnu implementáciu rozsahov platnosti (scopes) používame zásobníkový systém blokov. Každý blok (\texttt{if}, \texttt{while}, vnútorné bloky) dostáva unikátne \texttt{block\_id} z počítadla. Lokálne premenné sa interne premenúvajú na tvar \texttt{meno\$bN}, kde N je block ID, čo automaticky rieši shadowing premenných.
+
+Funkcia \texttt{symtable\_search\_var\_scoped()} prehľadáva premenné od aktuálneho bloku smerom k vonkajším blokom, čo zabezpečuje správne nájdenie najvnútornejšej viditeľnej definície.
+
+\section{Sémantická analýza}
+Sémantická analýza prebieha integrovane so syntaktickou analýzou a vykonáva nasledujúce kontroly:
+\begin{itemize}
+    \item Kontrola definície premenných a funkcií pred ich použitím
+    \item Kontrola redefinícií v rovnakom rozsahu platnosti
+    \item Kontrola počtu parametrov pri volaní funkcií
+    \item Typová kontrola literálov vo výrazoch
+\end{itemize}
+
+\subsection{Odložená validácia funkcií}
+Volania funkcií sa zaznamenávajú do linked listu a validujú sa až po spracovaní celého programu. To umožňuje volať funkcie definované neskôr v kóde.
+
+\subsection{Sledovanie premenných funkcie}
+Pre potreby generovania DEFVAR inštrukcií na začiatku funkcie si udržiavame zoznam všetkých premenných použitých vo funkcii v poli \texttt{ifj\_function\_vars}.
+
+\section{Generovanie IFJcode25}
+Modul \texttt{generator.c} generuje kód syntaxou riadeným prekladom -- kód sa produkuje priamo počas parsovania.
+
+\subsection{Systém bufferov}
+Implementovali sme trojitý buffrovací systém pomocou \texttt{open\_memstream()}:
+\begin{enumerate}
+    \item \textbf{user\_functions\_buffer} -- zhromažďuje kód všetkých užívateľských funkcií (okrem main)
+    \item \textbf{main\_function\_buffer} -- osobitne uchováva telo main funkcie
+    \item \textbf{function\_body\_buffer} -- dočasný buffer pre aktuálne spracovávanú funkciu
+\end{enumerate}
+
+Tento prístup umožňuje vygenerovať výstup v správnom poradí: najprv hlavička so skokom na main, potom vstavané funkcie, užívateľské funkcie a nakoniec main.
+
+\subsection{Odložené DEFVAR}
+IFJcode25 vyžaduje, aby DEFVAR inštrukcie pre lokálne premenné boli na začiatku funkcie. Keďže premenné môžu byť deklarované kdekoľvek v tele funkcie, zbierame ich do zoznamu \texttt{ifj\_function\_vars} a DEFVAR generujeme až po spracovaní celého tela funkcie pomocou \texttt{generate\_all\_function\_defvars()}.
+
+\subsection{Escaping reťazcov}
+Funkcia \texttt{convert\_to\_escaped\_string()} konvertuje reťazce do formátu vyžadovaného IFJcode25. Znaky s ASCII hodnotou $\leq 32$, mriežka (\#) a spätné lomítko sa konvertujú na \textbackslash xyz formát (trojciferný ASCII kód).
+
+\subsection{Polymorfné operátory}
+Operátory \texttt{+} a \texttt{*} sú polymorfné -- ich správanie závisí od typov operandov. Generujeme runtime kontroly pomocou inštrukcie \texttt{TYPE}, ktoré zisťujú typy operandov na zásobníku a vetvia výpočet na správnu variantu (sčítanie vs. konkatenácia, násobenie vs. opakovanie reťazca).
+
+\subsection{Labely a rámce}
+Počítadlo \texttt{ifj\_label\_counter} generuje unikátne návestia pre riadiace štruktúry. Funkcie používajú CREATEFRAME/PUSHFRAME pre vytvorenie lokálneho rámca. Parametre sa vyberajú zo zásobníku v opačnom poradí (posledný vložený = prvý vybraný).
+
+ \clearpage
+\section{Chybové hlásenia}
+Prekladač vracia nasledujúce návratové kódy chýb:
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{|c|l|}
+        \hline
+        \textbf{Kód} & \textbf{Popis chyby} \\
+        \hline
+        1 & Chyba v rámci lexikálnej analýzy (ERR\_LEXICAL) \\
+        2 & Chyba v rámci syntaktickej analýzy (ERR\_SYNTAX) \\
+        3 & Nedefinovaná funkcia alebo premenná (ERR\_SEM\_UNDEF) \\
+        4 & Redefinícia funkcie alebo premennej (ERR\_SEM\_REDEF) \\
+        5 & Nesprávny počet parametrov/typ vstavanej f. (ERR\_SEM\_PARAMS) \\
+        6 & Chyba typovej kompatibility vo výrazoch (ERR\_SEM\_TYPE\_COMPAT) \\
+        10 & Ostatné sémantické chyby (ERR\_SEM\_OTHER) \\
+        25 & Behová chyba -- zlý typ parametru (ERR\_RUNTIME\_PARAM\_TYPE) \\
+        26 & Behová chyba -- typová kompatibilita (ERR\_RUNTIME\_TYPE\_COMPAT) \\
+        99 & Interná chyba prekladača (ERR\_INTERNAL) \\
+        \hline
+    \end{tabular}
+    \caption{Tabuľka návratových kódov}
+\end{table}
+
+\section{Testovanie}
+Súčasťou projektu sú testovacie súbory \texttt{scanner\_test.c} a \texttt{symtable\_test.c}.
+Tieto súbory boli použité na testovanie pre pozitívne testy syntakticky správnych programov a negatívne testy lexikálnych, syntaktických a sémantických chýb.
+Samozrejme, toto nebolo jediné testovanie -- testovanie prebiehalo aj mimo týchto súborov počas celej doby práce na projekte.
+
+\section{Práca v tíme}
+Projekt bol vyvíjaný v tíme štyroch členov. Na začiatku sme si stanovili rozdelenie úloh podľa vertikálneho prístupu, kde každý člen zodpovedá za určitú časť prekladača.
+
+\subsection{Rozdelenie úloh}
+\begin{itemize}
+    \item \textbf{Martin Michálik} -- vedenie projektu, generátor kódu, parser, koordinácia
+    \item \textbf{Matúš Magyar} -- parser, generator, testovanie, dokumentácia
+    \item \textbf{Šimon Škoda} -- lexikálny analyzátor, tabuľka symbolov, precedenčná analýza
+    \item \textbf{Jaroslav Vrbiniak} -- tabuľka symbolov, testovanie
+\end{itemize}
+
+\subsection{Komunikácia a verzia}
+Pre správu zdrojového kódu sme používali verzovací systém Git s repozitárom na GitHub. Pravidelne sme sa stretávali na konzultáciách, kde sme riešili návrh rozhraní medzi modulmi a aktuálne problémy.
+
+\section{Záver}
+Projekt implementuje funkcionalitu prekladača IFJ25 podľa špecifikácie. Kód je modulárny a testovaný. Tabuľka symbolov implementuje AVL strom pre efektívne vyhľadávanie.
+Kľúčom tohto projektu bolo rozšíriť si naše programovacie schopnosti v jazyku C, naučiť sa pracovať v tíme, pochopiť, ako funguje prekladač a ako ho vytvoriť. Projekt je možné rozšíriť o ďalšie variácie funkcionalít.
+
+\end{document}
