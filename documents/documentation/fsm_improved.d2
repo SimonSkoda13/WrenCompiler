@@ -1,0 +1,248 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 0
+    pad: 0
+  }
+}
+
+classes: {
+  final: {
+    style: {
+      double-border: true
+      fill: "#d4edda"
+      stroke: "#28a745"
+      stroke-width: 2
+      font-size: 14
+      bold: true
+    }
+  }
+  intermediate: {
+    style: {
+      fill: "#fff3cd"
+      stroke: "#ffc107"
+      stroke-width: 1
+      font-size: 12
+    }
+  }
+  error: {
+    style: {
+      fill: "#f8d7da"
+      stroke: "#dc3545"
+      stroke-width: 2
+      font-size: 12
+    }
+  }
+  comment: {
+    style: {
+      fill: "#e2e3e5"
+      stroke: "#6c757d"
+      stroke-width: 1
+      font-size: 11
+    }
+  }
+}
+
+# ZAČIATOČNÝ STAV
+START: START {
+  style: {
+    fill: "#cfe2ff"
+    stroke: "#0d6efd"
+    stroke-width: 3
+    font-size: 16
+    bold: true
+  }
+}
+
+# === FINÁLNE STAVY - OPERÁTORY ===
+OP_ADD: OP_ADD\n(+) {class: final}
+OP_SUB: OP_SUB\n(-) {class: final}
+OP_MUL: OP_MUL\n(*) {class: final}
+OP_DIV: OP_DIV\n(/) {class: final}
+OP_ASSIGN: OP_ASSIGN\n(=) {class: final}
+OP_EQUALS: OP_EQUALS\n(==) {class: final}
+OP_LESS: OP_LESS_THAN\n(<) {class: final}
+OP_LESS_EQ: OP_LESS_EQUAL\n(<=) {class: final}
+OP_GREATER: OP_GREATER_THAN\n(>) {class: final}
+OP_GREATER_EQ: OP_GREATER_EQUAL\n(>=) {class: final}
+OP_NOT_EQ: OP_NOT_EQUALS\n(!=) {class: final}
+
+# === FINÁLNE STAVY - ODDEĽOVAČE ===
+LEFT_PAREN: "LEFT_PAREN\n(" {class: final}
+RIGHT_PAREN: "RIGHT_PAREN\n)" {class: final}
+LEFT_BRACE: "LEFT_BRACE\n{" {class: final}
+RIGHT_BRACE: "RIGHT_BRACE\n}" {class: final}
+COMMA: "COMMA\n," {class: final}
+DOT: "DOT\n." {class: final}
+EOL: "EOL\n\\n" {class: final}
+EOF: END_OF_FILE {class: final}
+
+# === FINÁLNE STAVY - ČÍSLA ===
+NUM_INT: NUM_INT {class: final}
+NUM_FLOAT: NUM_FLOAT {class: final}
+NUM_HEX: NUM_HEX\n(0x...) {class: final}
+NUM_EXP_FLOAT: "NUM_EXP_FLOAT\n(Ne±N)" {class: final}
+
+# === FINÁLNE STAVY - REŤAZCE & IDENTIFIKÁTORY ===
+STRING_LIT: STRING_LITERAL {class: final}
+IDENTIFIER: "IDENTIFIER\n(alebo KEYWORD)" {class: final}
+GLOBAL_VAR: GLOBAL_VAR\n(__xxx) {class: final}
+
+# === KOMENTÁRE ===
+LINE_COMMENT: "// komentár" {class: comment}
+BLOCK_COMMENT: "/* komentár" {class: comment}
+BLOCK_END: "koniec /* */" {class: comment}
+
+# === PRECHODOVÉ STAVY - ČÍSLA ===
+ZERO: 0 {class: intermediate}
+HEX_START: 0x/0X {class: intermediate}
+DECIMAL_PT: desatinná\nbodka {class: intermediate}
+EXP_START: e/E {class: intermediate}
+EXP_SIGN: e+/e- {class: intermediate}
+
+# === PRECHODOVÉ STAVY - REŤAZCE ===
+STR_START: 'opening "' {class: intermediate}
+STR_CONTENT: "znaky reťazca" {class: intermediate}
+STR_ESCAPE: 'backslash \\' {class: intermediate}
+STR_MULTI_1: 'double ""' {class: intermediate}
+STR_MULTI_2: 'triple """ obsah' {class: intermediate}
+STR_MULTI_3: 'triple """ obsah "' {class: intermediate}
+STR_MULTI_4: 'triple """ obsah ""' {class: intermediate}
+
+# === PRECHODOVÉ STAVY - GLOBÁLNE PREMENNÉ ===
+UNDERSCORE_1: _ {class: intermediate}
+UNDERSCORE_2: __ {class: intermediate}
+
+# === CHYBOVÉ STAVY ===
+ERR_EXCLAIM: ! {class: error}
+
+# ============================================
+# PRECHODY - JEDNODUCHÉ TOKENY
+# ============================================
+START -> EOL: "\\n"
+START -> START: "[ \\t\\r\\f]"
+START -> OP_ADD: "+"
+START -> OP_SUB: "-"
+START -> OP_MUL: "*"
+START -> COMMA: ","
+START -> DOT: "."
+START -> LEFT_PAREN: "("
+START -> RIGHT_PAREN: ")"
+START -> LEFT_BRACE: "{"
+START -> RIGHT_BRACE: "}"
+START -> EOF: "EOF"
+
+# === OPERÁTOR / (DELENIE ALEBO KOMENTÁR) ===
+START -> OP_DIV: "/" {
+  style.stroke: "#28a745"
+}
+OP_DIV -> LINE_COMMENT: "/" {
+  style.stroke: "#6c757d"
+}
+LINE_COMMENT -> LINE_COMMENT: "¬\\n" {
+  style.stroke: "#6c757d"
+}
+LINE_COMMENT -> EOL: "\\n" {
+  style.stroke: "#6c757d"
+}
+OP_DIV -> BLOCK_COMMENT: "*" {
+  style.stroke: "#6c757d"
+}
+BLOCK_COMMENT -> BLOCK_COMMENT: "¬*" {
+  style.stroke: "#6c757d"
+}
+BLOCK_COMMENT -> BLOCK_END: "*" {
+  style.stroke: "#6c757d"
+}
+BLOCK_END -> BLOCK_COMMENT: "¬/" {
+  style.stroke: "#6c757d"
+}
+BLOCK_END -> EOL: "/" {
+  style.stroke: "#6c757d"
+  label.near: bottom-right
+}
+
+# === OPERÁTORY S MOŽNÝM = ===
+START -> OP_ASSIGN: "="
+OP_ASSIGN -> OP_EQUALS: "="
+
+START -> OP_LESS: "<"
+OP_LESS -> OP_LESS_EQ: "="
+
+START -> OP_GREATER: ">"
+OP_GREATER -> OP_GREATER_EQ: "="
+
+START -> ERR_EXCLAIM: "!"
+ERR_EXCLAIM -> OP_NOT_EQ: "=" {
+  style.stroke: "#dc3545"
+}
+
+# === ČÍSLA - ZAČIATOK ===
+START -> ZERO: "0"
+START -> NUM_INT: "[1-9]"
+NUM_INT -> NUM_INT: "[0-9]"
+
+# === HEXADECIMÁLNE ČÍSLA ===
+ZERO -> HEX_START: "x/X"
+HEX_START -> NUM_HEX: "[0-9a-fA-F]"
+NUM_HEX -> NUM_HEX: "[0-9a-fA-F]+"
+
+# === DESATINNÉ ČÍSLA ===
+ZERO -> DECIMAL_PT: "."
+NUM_INT -> DECIMAL_PT: "."
+DECIMAL_PT -> NUM_FLOAT: "[0-9]"
+NUM_FLOAT -> NUM_FLOAT: "[0-9]+"
+
+# === EXPONENCIÁLNE ČÍSLA ===
+NUM_INT -> EXP_START: "e/E"
+NUM_FLOAT -> EXP_START: "e/E"
+EXP_START -> EXP_SIGN: "+/-"
+EXP_START -> NUM_EXP_FLOAT: "[0-9]"
+EXP_SIGN -> NUM_EXP_FLOAT: "[0-9]"
+NUM_EXP_FLOAT -> NUM_EXP_FLOAT: "[0-9]+"
+
+# === REŤAZCE ===
+START -> STR_START: '"'
+STR_START -> STR_CONTENT: "ASCII>31 ¬[\"\\ ]"
+STR_CONTENT -> STR_CONTENT: "ASCII>31 ¬[\"\\ ]"
+STR_CONTENT -> STRING_LIT: '"'
+
+# Escape sekvencie
+STR_START -> STR_ESCAPE: "\\"
+STR_CONTENT -> STR_ESCAPE: "\\"
+STR_ESCAPE -> STR_CONTENT: "n/t/r/\\\\/\"/0"
+
+# Multiline stringy
+STR_START -> STR_MULTI_1: '"'
+STR_MULTI_1 -> STR_MULTI_2: '"'
+STR_MULTI_2 -> STR_MULTI_2: "¬\""
+STR_MULTI_2 -> STR_MULTI_3: '"'
+STR_MULTI_3 -> STR_MULTI_2: "¬\""
+STR_MULTI_3 -> STR_MULTI_4: '"'
+STR_MULTI_4 -> STR_MULTI_2: "¬\""
+STR_MULTI_4 -> STRING_LIT: '"'
+
+# === IDENTIFIKÁTORY ===
+START -> IDENTIFIER: "[a-zA-Z]"
+IDENTIFIER -> IDENTIFIER: "[a-zA-Z0-9_]+"
+
+# === GLOBÁLNE PREMENNÉ ===
+START -> UNDERSCORE_1: "_"
+UNDERSCORE_1 -> UNDERSCORE_2: "_"
+UNDERSCORE_2 -> GLOBAL_VAR: "[a-zA-Z0-9_]"
+GLOBAL_VAR -> GLOBAL_VAR: "[a-zA-Z0-9_]+"
+
+# ============================================
+# LEGENDA - KONVENCIE ZOBRAZENIA
+# ============================================
+legend: |md
+  **Konvencie:**
+  🟢 Zelené dvojité = Finálne stavy (tokeny)
+  🟡 Žlté = Prechodové stavy
+  🔴 Červené = Chybové stavy
+  ⚫ Sivé = Komentáre (ignorované)
+  🔵 Modré hrubé = Počiatočný stav
+  ¬X = Všetky znaky okrem X
+|

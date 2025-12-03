@@ -105,9 +105,20 @@ Hexadecimálne čísla rozpoznávame po prefixi \texttt{0x} alebo \texttt{0X} po
 \begin{figure}[h!]
     \centering
     \includegraphics[width=\textwidth]{fsm.png} 
-    \caption{Diagram konečného automatu (FSM) použitý v lexikálnej analýze.}
+    \caption{Diagram konečného automatu lexikálneho analyzátora. Zelené uzly s dvojitým rámom predstavujú finálne akceptujúce stavy (tokeny), žlté uzly sú prechodové stavy, sivé uzly predstavujú komentáre (ktoré sa ignorujú a negenerujú tokeny), modrý uzol s hrubým rámom je počiatočný stav. Notácia ¬X znamená \uv{všetky znaky okrem X}.}
     \label{fig:fsm}
 \end{figure}
+
+\noindent\textbf{Rozpoznávané tokeny:} 
+\begin{itemize}
+    \item \textbf{Operátory:} aritmetické (\texttt{+}, \texttt{-}, \texttt{*}, \texttt{/}), priradenie (\texttt{=}), porovnávacie (\texttt{==}, \texttt{!=}, \texttt{<}, \texttt{<=}, \texttt{>}, \texttt{>=})
+    \item \textbf{Oddeľovače:} zátvorky (\texttt{(}, \texttt{)}, \texttt{\{}, \texttt{\}}), čiarka, bodka, nový riadok
+    \item \textbf{Číselné literály:} celé čísla, desatinné, hexadecimálne (prefix \texttt{0x}), exponenciálne (s~\texttt{e}/\texttt{E})
+    \item \textbf{Reťazce:} jednoriadkové (\texttt{"text"}), viacriadkové (\texttt{"""text"""}), escape sekvencie (\texttt{\textbackslash n}, \texttt{\textbackslash t}, \texttt{\textbackslash r}, \texttt{\textbackslash\textbackslash}, \texttt{\textbackslash"}, \texttt{\textbackslash 0})
+    \item \textbf{Identifikátory:} bežné identifikátory a kľúčové slová (\texttt{class}, \texttt{static}, \texttt{var}, \texttt{if}, \texttt{else}, \texttt{while}, \texttt{return}, \texttt{null}, \texttt{Num}, \texttt{String}, \texttt{Null}, \texttt{import}, \texttt{for}, \texttt{is}, \texttt{Ifj})
+    \item \textbf{Globálne premenné:} identifikátory s prefixom \texttt{\_\_} (napr. \texttt{\_\_counter})
+    \item \textbf{Komentáre:} jednoriadkové (\texttt{//}), viacriadkové vnorené (\texttt{/* */})
+\end{itemize}
 
 \section{Syntaktická analýza}
 Parser je implementovaný v module \texttt{parser.c} metódou rekurzívneho zostupu.

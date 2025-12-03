@@ -99,12 +99,14 @@ static void get_param_value(t_ast_node *node, char *result, size_t result_size)
         }
         else
         {
+            // Parameter or function-scoped variable
             snprintf(result, result_size, "LF@%s", node->token->value.string);
         }
         break;
     }
 
     case GLOBAL_VAR:
+        // Global variables start with __ and use GF@ frame
         snprintf(result, result_size, "GF@__%s", node->token->value.string);
         break;
 
@@ -124,7 +126,7 @@ static void get_param_value(t_ast_node *node, char *result, size_t result_size)
     }
 }
 
-// Funkcia na generovanie kódu pre Ifj.write(param)
+// Function to generate code for expressions (stub, to be implemented)
 void generate_builtin_write(t_ast_node *param_node)
 {
     if (param_node == NULL)
@@ -147,6 +149,7 @@ void generate_builtin_write(t_ast_node *param_node)
         exit_with_error(ERR_INTERNAL, "Unsupported type in Ifj.write()");
     }
 
+    // If it's a variable (starts with LF@ or GF@), check if it's float and if it's a whole number
     if (strncmp(param_var, "LF@", 3) == 0 || strncmp(param_var, "GF@", 3) == 0 || strncmp(param_var, "TF@", 3) == 0)
     {
         static int write_counter = 0;
@@ -165,22 +168,22 @@ void generate_builtin_write(t_ast_node *param_node)
             symtable_add_function_var(symtable, isint_var);
         }
 
-        // kontrola typu
+        // Check type
         printf("TYPE LF@%s %s\n", type_var, param_var);
         printf("JUMPIFEQ $$write_is_float_%d LF@%s string@float\n", label_id, type_var);
-        // nie je float, len vypíšeme
+        // Not float, just write it
         printf("WRITE %s\n", param_var);
         printf("JUMP $$write_end_%d\n", label_id);
 
-        // Je to float - skontrolujeme či je to celé číslo pomocou ISINT
+        // It's float - check if it's a whole number using ISINT
         printf("LABEL $$write_is_float_%d\n", label_id);
         printf("ISINT LF@%s %s\n", isint_var, param_var);
         printf("JUMPIFEQ $$write_convert_to_int_%d LF@%s bool@true\n", label_id, isint_var);
-        // Nie je celé číslo, vypíšeme ako float
+        // Not a whole number, write as float
         printf("WRITE %s\n", param_var);
         printf("JUMP $$write_end_%d\n", label_id);
 
-        // Je to celé číslo, prevedieme na int a vypíšeme
+        // It's a whole number, convert to int and write
         printf("LABEL $$write_convert_to_int_%d\n", label_id);
         printf("FLOAT2INT LF@%s %s\n", temp_var, param_var);
         printf("WRITE LF@%s\n", temp_var);
@@ -189,12 +192,12 @@ void generate_builtin_write(t_ast_node *param_node)
     }
     else
     {
-        // Je to literál, len vypíšeme
+        // It's a literal, just write it
         printf("WRITE %s\n", param_var);
     }
 }
 
-// Funkcia na generovanie kódu pre Ifj.read_str()
+// Function to generate code for expressions (stub, to be implemented)
 void generate_builtin_read_str(const char *result_var)
 {
     if (result_var == NULL)
@@ -204,7 +207,7 @@ void generate_builtin_read_str(const char *result_var)
     printf("READ %s string\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.read_num()
+// Function to generate code for expressions (stub, to be implemented)
 void generate_builtin_read_num(const char *result_var)
 {
     if (result_var == NULL)
@@ -214,7 +217,7 @@ void generate_builtin_read_num(const char *result_var)
     printf("READ %s float\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.floor()
+// Function to generate code for expressions (stub, to be implemented)
 void generate_builtin_floor(const char *result_var, t_ast_node *param_node)
 {
     if (result_var == NULL || param_node == NULL)
@@ -222,6 +225,7 @@ void generate_builtin_floor(const char *result_var, t_ast_node *param_node)
         exit_with_error(ERR_INTERNAL, "Internal error: NULL argument in Ifj.floor()");
     }
 
+    // Generate code to evaluate the parameter expression
     char param_var[256];
     int err = generate_expression_code(param_node, param_var, sizeof(param_var));
     if (err)
@@ -229,13 +233,12 @@ void generate_builtin_floor(const char *result_var, t_ast_node *param_node)
         exit_with_error(ERR_INTERNAL, "Failed to generate expression for Ifj.floor()");
     }
 
-    // Zavoláme vstavanú funkciu cez zásobník
+    // Call the builtin function via stack
     printf("PUSHS %s\n", param_var);
     printf("CALL $$__builtin_floor\n");
     printf("POPS %s\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.str()
 void generate_builtin_str(const char *result_var, t_ast_node *param_node)
 {
     if (result_var == NULL || param_node == NULL)
@@ -243,6 +246,7 @@ void generate_builtin_str(const char *result_var, t_ast_node *param_node)
         exit_with_error(ERR_INTERNAL, "Internal error: NULL argument in Ifj.str()");
     }
 
+    // Generate code to evaluate the parameter expression
     char param_var[256];
 
     if (param_node->left == NULL && param_node->right == NULL)
@@ -258,13 +262,12 @@ void generate_builtin_str(const char *result_var, t_ast_node *param_node)
         }
     }
 
-    // Zavoláme vstavanú funkciu cez zásobník
+    // Call the builtin function via stack
     printf("PUSHS %s\n", param_var);
     printf("CALL $$__builtin_str\n");
     printf("POPS %s\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.length()
 void generate_builtin_length(const char *result_var, t_ast_node *param_node)
 {
     if (result_var == NULL || param_node == NULL)
@@ -282,13 +285,12 @@ void generate_builtin_length(const char *result_var, t_ast_node *param_node)
         generate_expression_code(param_node, param_var, sizeof(param_var));
     }
 
-    // Zavoláme vstavanú funkciu cez zásobník
+    // Call the builtin function via stack
     printf("PUSHS %s\n", param_var);
     printf("CALL $$__builtin_length\n");
     printf("POPS %s\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.chr()
 void generate_builtin_chr(const char *result_var, t_ast_node *param_node)
 {
     if (result_var == NULL || param_node == NULL)
@@ -306,13 +308,12 @@ void generate_builtin_chr(const char *result_var, t_ast_node *param_node)
         generate_expression_code(param_node, param_var, sizeof(param_var));
     }
 
-    // Zavoláme vstavanú funkciu cez zásobník
+    // Call the builtin function via stack
     printf("PUSHS %s\n", param_var);
     printf("CALL $$__builtin_chr\n");
     printf("POPS %s\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.substring()
 void generate_builtin_substring(const char *result_var, t_ast_node *param_node, t_ast_node *i_node, t_ast_node *j_node)
 {
     if (result_var == NULL || param_node == NULL || i_node == NULL || j_node == NULL)
@@ -350,7 +351,7 @@ void generate_builtin_substring(const char *result_var, t_ast_node *param_node, 
         generate_expression_code(j_node, j_var, sizeof(j_var));
     }
 
-    // Zavoláme vstavanú funkciu cez zásobník (push v poradí, pop v opačnom)
+    // Call the builtin function via stack (push in order, popped in reverse)
     printf("PUSHS %s\n", param_var);
     printf("PUSHS %s\n", i_var);
     printf("PUSHS %s\n", j_var);
@@ -358,7 +359,6 @@ void generate_builtin_substring(const char *result_var, t_ast_node *param_node, 
     printf("POPS %s\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.strcmp()
 void generate_builtin_strcmp(const char *result_var, t_ast_node *str1_node, t_ast_node *str2_node)
 {
     if (result_var == NULL || str1_node == NULL || str2_node == NULL)
@@ -386,14 +386,13 @@ void generate_builtin_strcmp(const char *result_var, t_ast_node *str1_node, t_as
         generate_expression_code(str2_node, str2_var, sizeof(str2_var));
     }
 
-    // Zavoláme vstavanú funkciu cez zásobník
+    // Call the builtin function via stack (push in order, popped in reverse)
     printf("PUSHS %s\n", str1_var);
     printf("PUSHS %s\n", str2_var);
     printf("CALL $$__builtin_strcmp\n");
     printf("POPS %s\n", result_var);
 }
 
-// Funkcia na generovanie kódu pre Ifj.ord()
 void generate_builtin_ord(const char *result_var, t_ast_node *param_node, t_ast_node *i_node)
 {
     if (result_var == NULL || param_node == NULL || i_node == NULL)
@@ -421,7 +420,7 @@ void generate_builtin_ord(const char *result_var, t_ast_node *param_node, t_ast_
         generate_expression_code(i_node, i_var, sizeof(i_var));
     }
 
-    // Zavoláme vstavanú funkciu cez zásobník
+    // Call the builtin function via stack (push in order, popped in reverse)
     printf("PUSHS %s\n", str_var);
     printf("PUSHS %s\n", i_var);
     printf("CALL $$__builtin_ord\n");
